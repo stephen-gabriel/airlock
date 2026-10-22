@@ -1,0 +1,122 @@
+{
+  "mode": "live-testnet",
+  "job": {
+    "id": "19fe60a4bcbc34a7c8d14cab0076f406",
+    "mode": "live-testnet",
+    "approvalId": "m1a-recipient",
+    "scenario": "changed-recipient",
+    "state": "rejected",
+    "checks": [
+      {
+        "field": "network",
+        "status": "unknown",
+        "approvedDisplay": "testnet",
+        "proposedDisplay": null,
+        "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+        "source": "gate"
+      },
+      {
+        "field": "recipient",
+        "status": "mismatch",
+        "approvedDisplay": "[redacted-testnet-ua]",
+        "proposedDisplay": "not inspected",
+        "reasonCode": "E_POLICY_RECIPIENT",
+        "source": "gate"
+      },
+      {
+        "field": "amount",
+        "status": "unknown",
+        "approvedDisplay": "100000 zats (0.00100000 ZEC)",
+        "proposedDisplay": null,
+        "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+        "source": "gate"
+      },
+      {
+        "field": "fee",
+        "status": "unknown",
+        "approvedDisplay": "at most 10000 zats (0.00010000 ZEC)",
+        "proposedDisplay": null,
+        "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+        "source": "gate"
+      },
+      {
+        "field": "memo",
+        "status": "unknown",
+        "approvedDisplay": "Airlock live demo",
+        "proposedDisplay": null,
+        "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+        "source": "gate"
+      },
+      {
+        "field": "change",
+        "status": "unknown",
+        "approvedDisplay": "wallet change only",
+        "proposedDisplay": null,
+        "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+        "source": "gate"
+      },
+      {
+        "field": "authorization",
+        "status": "unknown",
+        "approvedDisplay": "single-use approval",
+        "proposedDisplay": null,
+        "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+        "source": "gate"
+      },
+      {
+        "field": "expiry",
+        "status": "unknown",
+        "approvedDisplay": "expires 2026-10-28T20:30:22.000Z",
+        "proposedDisplay": null,
+        "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+        "source": "gate"
+      }
+    ],
+    "proposal": {
+      "txid": "c11dc763388e87e83f223ff4a1edc522ab28ff67d760360e4b926edf1f072e5f",
+      "recipientUa": "[redacted]",
+      "amountZat": "100000",
+      "memoDisplay": "Airlock live demo",
+      "feeZat": null,
+      "expiryHeight": null,
+      "artifactSha256": "a2eec2158f62f74640881e67a8d5a2e8527989008508702814ba5ed6044d8358",
+      "source": "trusted-builder"
+    },
+    "createdAt": "2026-10-21T21:32:38.748Z",
+    "updatedAt": "2026-10-21T21:32:59.806Z",
+    "txid": null,
+    "minedHeight": null,
+    "artifactId": null,
+    "artifactSha256": null,
+    "signedAt": null,
+    "broadcastAttempts": 0,
+    "stages": [
+      {
+        "state": "queued",
+        "at": "2026-10-21T21:32:38.748Z"
+      },
+      {
+        "state": "preparing",
+        "at": "2026-10-21T21:32:38.807Z"
+      },
+      {
+        "state": "proving",
+        "at": "2026-10-21T21:32:42.103Z"
+      },
+      {
+        "state": "signing",
+        "at": "2026-10-21T21:32:59.465Z"
+      },
+      {
+        "state": "rejected",
+        "at": "2026-10-21T21:32:59.806Z"
+      }
+    ],
+    "error": {
+      "code": "E_POLICY_RECIPIENT",
+      "message": "The proposed destination does not match the approved recipient.",
+      "stage": "gate",
+      "retryable": false
+    }
+  }
+}

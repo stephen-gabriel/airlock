@@ -1,0 +1,121 @@
+{
+  "mode": "live-testnet",
+  "job": {
+    "id": "d08d347a1a1dc05af5ed88c569233dc1",
+    "mode": "live-testnet",
+    "approvalId": "m1a-match",
+    "scenario": "matching",
+    "state": "confirmed",
+    "checks": [
+      {
+        "field": "network",
+        "status": "match",
+        "approvedDisplay": "testnet",
+        "proposedDisplay": "testnet",
+        "source": "gate"
+      },
+      {
+        "field": "recipient",
+        "status": "match",
+        "approvedDisplay": "[redacted-testnet-ua]",
+        "proposedDisplay": "[redacted-testnet-ua]",
+        "source": "gate"
+      },
+      {
+        "field": "amount",
+        "status": "match",
+        "approvedDisplay": "100000 zats (0.00100000 ZEC)",
+        "proposedDisplay": "100000 zats (0.00100000 ZEC)",
+        "source": "gate"
+      },
+      {
+        "field": "fee",
+        "status": "match",
+        "approvedDisplay": "at most 10000 zats (0.00010000 ZEC)",
+        "proposedDisplay": "within the approved maximum",
+        "source": "gate"
+      },
+      {
+        "field": "memo",
+        "status": "match",
+        "approvedDisplay": "Airlock live demo",
+        "proposedDisplay": "Airlock live demo",
+        "source": "gate"
+      },
+      {
+        "field": "change",
+        "status": "match",
+        "approvedDisplay": "wallet change only",
+        "proposedDisplay": "gate accepted the output set",
+        "source": "gate"
+      },
+      {
+        "field": "authorization",
+        "status": "match",
+        "approvedDisplay": "single-use approval",
+        "proposedDisplay": "approval accepted",
+        "source": "gate"
+      },
+      {
+        "field": "expiry",
+        "status": "match",
+        "approvedDisplay": "expires 2026-10-28T20:30:22.000Z",
+        "proposedDisplay": "within the gate window",
+        "source": "gate"
+      }
+    ],
+    "proposal": {
+      "txid": "59193d22f0205451f39b5b463963c9fdec47c0c4a08c603ec8c26e8bf727e39a",
+      "recipientUa": "[redacted]",
+      "amountZat": "100000",
+      "memoDisplay": "Airlock live demo",
+      "feeZat": null,
+      "expiryHeight": null,
+      "artifactSha256": "6f533829370dee5b2ceadce28b686105a9d9f1765759fd25ad4450553528431e",
+      "source": "trusted-builder"
+    },
+    "createdAt": "2026-10-21T21:25:00.050Z",
+    "updatedAt": "2026-10-21T21:26:57.240Z",
+    "txid": "59193d22f0205451f39b5b463963c9fdec47c0c4a08c603ec8c26e8bf727e39a",
+    "minedHeight": 4526817,
+    "artifactId": "art_6a734024f04f9159",
+    "artifactSha256": "3d0e41d34f9e8f2180c16414826b222a40f17f10d52ff66c3991014f566fcd38",
+    "signedAt": "2026-10-21T21:25:13.454Z",
+    "broadcastAttempts": 1,
+    "stages": [
+      {
+        "state": "queued",
+        "at": "2026-10-21T21:25:00.050Z"
+      },
+      {
+        "state": "preparing",
+        "at": "2026-10-21T21:25:00.132Z"
+      },
+      {
+        "state": "proving",
+        "at": "2026-10-21T21:25:03.011Z"
+      },
+      {
+        "state": "signing",
+        "at": "2026-10-21T21:25:12.882Z"
+      },
+      {
+        "state": "signed",
+        "at": "2026-10-21T21:25:13.455Z"
+      },
+      {
+        "state": "broadcasting",
+        "at": "2026-10-21T21:25:36.409Z"
+      },
+      {
+        "state": "pending",
+        "at": "2026-10-21T21:25:40.719Z"
+      },
+      {
+        "state": "confirmed",
+        "at": "2026-10-21T21:26:57.240Z"
+      }
+    ],
+    "error": null
+  }
+}

@@ -1,0 +1,38 @@
+Airlock M3 local checks
+
+== apps/api npm run build ==
+
+> @airlock/api@0.1.0 build
+> tsc -p tsconfig.json
+
+build_exit=0
+
+== apps/api npm run typecheck ==
+
+> @airlock/api@0.1.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+typecheck_exit=0
+
+== node --check apps/web/app-live.js ==
+node_check_exit=0
+
+== WSL npm run test:m2 ==
+
+> @airlock/api@0.1.0 test:m2
+> node --test test/m2-api.test.mjs
+
+✔ M2 health exposes quota and funding truthfully (708.514613ms)
+✔ session isolation, idempotency, and unsupported scenarios (255.913504ms)
+✔ broadcast unknown reconciles before exact-artifact retry (114.553002ms)
+✔ blocked job resumes in place without a new job or payment (183.745004ms)
+✔ quota, cookie boundaries, and static contracts stay truthful (57.207401ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1617.166228
+m2_tests_exit=0

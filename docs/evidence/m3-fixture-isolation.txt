@@ -1,0 +1,21 @@
+Airlock M3 fixture isolation check
+Captured: 2026-10-22
+Live API: http://127.0.0.1:8787
+
+Before and after the fixture run, both commands returned identical values.
+
+Health (both observations):
+{"mode":"live-testnet","status":"degraded","signer":"available","chainContext":"stale","funding":"available","demoSetsRemaining":1,"sessionSlotsRemaining":200,"acceptingDemoSessions":false,"reason":"chain context is stale"}
+
+Hashes (identical before and after):
+8015512155fb0ecf2eb1af72a428a945782795acad6c8fe18c4625f4929c0826  $AIRLOCK_API_STATE/inventory.json
+7df3868d8d7ad5d3593b84e12ddc377062b5a7faa32a3699d50d7ae5321eb9b3  $AIRLOCK_GATE_HOME/approvals/m1c-match.rec
+1da3b274ed8b6cd733fd0492b6c4d4c38468930826e53dc843ad49594fe9785b  $AIRLOCK_GATE_HOME/approvals/m1c-recipient.rec
+8fa4ae7fbd4af7a7edbd2f40d5054d2ffcf22b6107257b8f97d591543a54d6aa  $AIRLOCK_GATE_HOME/approvals/m1c-memo.rec
+
+No live approval record, demo set, inventory value, or service was changed.
+
+Live route probes after the fixture run:
+/__fixture/meta -> 404
+/tests/m3-fixtures/server.mjs -> 404
+/ -> 200

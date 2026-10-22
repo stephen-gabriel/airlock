@@ -1,0 +1,17 @@
+
+> @airlock/api@0.1.0 test:m2
+> node --test test/m2-api.test.mjs
+
+✔ M2 health exposes quota and funding truthfully (505.477092ms)
+✔ session isolation, idempotency, and unsupported scenarios (390.829533ms)
+✔ broadcast unknown reconciles before exact-artifact retry (197.749774ms)
+✔ blocked job resumes in place without a new job or payment (273.102171ms)
+✔ quota, cookie boundaries, and static contracts stay truthful (113.950267ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1788.749143

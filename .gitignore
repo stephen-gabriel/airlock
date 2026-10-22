@@ -1,0 +1,60 @@
+# Operational wallet data, keys, identities — never track
+wallets/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+keys.toml
+*-key.txt
+age-identity*
+*.agekey
+identity*.txt
+secrets/
+.env
+.env.*
+!.env.example
+
+# Sensitive PCZT artifacts (contain encrypted key material metadata)
+state/pczt/
+*.pczt
+*.pczt.*
+pczt_*_created
+pczt_*_proven
+pczt_*_signed
+pczt_*_combined
+
+# Raw logs may contain paths/seeds — keep out of evidence
+logs/
+*.log
+!docs/*.log.example
+
+# Approval records and local key material
+*.rec
+*.mac
+*.key
+*.pem
+*.sock
+
+# Local-only private evidence and runtime state
+_private/
+private/
+_private-evidence/
+airlock-*/
+
+# Toolchain/build output (large, reproducible)
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+test-results/
+tests/m3-fixtures/artifacts/
+zcash-devtool/
+.cargo-home/
+.cargo-target/
+
+# OS noise
+Thumbs.db
+Desktop.ini

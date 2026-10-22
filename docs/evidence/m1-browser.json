@@ -1,0 +1,569 @@
+{
+  "session": {
+    "mode": "live-testnet",
+    "sessionId": "[redacted]",
+    "demoSetId": "set-m1b",
+    "expiresAt": "2026-10-28T21:36:37.000Z",
+    "approvals": [
+      {
+        "id": "m1b-match",
+        "network": "testnet",
+        "recipientUa": "[redacted]",
+        "recipientLabel": "Airlock demo recipient",
+        "amountZat": "100000",
+        "maxFeeZat": "10000",
+        "memo": {
+          "display": "Airlock live demo",
+          "encoding": "canonical-512",
+          "policy": "exact"
+        },
+        "expiresAt": "2026-10-28T21:36:37.000Z",
+        "status": "completed",
+        "singlePayment": true,
+        "boundTxid": "2dc1c04f73bb7525f6ca5dfc62219da2109da37641719635c5a09cc82417fcab",
+        "scenario": "matching"
+      },
+      {
+        "id": "m1b-recipient",
+        "network": "testnet",
+        "recipientUa": "[redacted]",
+        "recipientLabel": "Airlock demo recipient",
+        "amountZat": "100000",
+        "maxFeeZat": "10000",
+        "memo": {
+          "display": "Airlock live demo",
+          "encoding": "canonical-512",
+          "policy": "exact"
+        },
+        "expiresAt": "2026-10-28T21:36:37.000Z",
+        "status": "pending",
+        "singlePayment": true,
+        "boundTxid": null,
+        "scenario": "changed-recipient"
+      },
+      {
+        "id": "m1b-memo",
+        "network": "testnet",
+        "recipientUa": "[redacted]",
+        "recipientLabel": "Airlock demo recipient",
+        "amountZat": "100000",
+        "maxFeeZat": "10000",
+        "memo": {
+          "display": "Airlock live demo",
+          "encoding": "canonical-512",
+          "policy": "exact"
+        },
+        "expiresAt": "2026-10-28T21:36:37.000Z",
+        "status": "pending",
+        "singlePayment": true,
+        "boundTxid": null,
+        "scenario": "hidden-memo"
+      }
+    ]
+  },
+  "jobs": {
+    "mode": "live-testnet",
+    "jobs": [
+      {
+        "id": "2a1060fabba9595fe80c153a4998da48",
+        "mode": "live-testnet",
+        "approvalId": "m1b-memo",
+        "scenario": "hidden-memo",
+        "state": "rejected",
+        "checks": [
+          {
+            "field": "network",
+            "status": "unknown",
+            "approvedDisplay": "testnet",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "recipient",
+            "status": "unknown",
+            "approvedDisplay": "[redacted-testnet-ua]",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "amount",
+            "status": "unknown",
+            "approvedDisplay": "100000 zats (0.00100000 ZEC)",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "fee",
+            "status": "unknown",
+            "approvedDisplay": "at most 10000 zats (0.00010000 ZEC)",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "memo",
+            "status": "mismatch",
+            "approvedDisplay": "Airlock live demo",
+            "proposedDisplay": "not inspected",
+            "reasonCode": "E_POLICY_MEMO",
+            "source": "gate"
+          },
+          {
+            "field": "change",
+            "status": "unknown",
+            "approvedDisplay": "wallet change only",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "authorization",
+            "status": "unknown",
+            "approvedDisplay": "single-use approval",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "expiry",
+            "status": "unknown",
+            "approvedDisplay": "expires 2026-10-28T21:36:37.000Z",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          }
+        ],
+        "proposal": {
+          "txid": "d1f09392893122090f7b6f9720be26205cc7aa03e4eb55c05f07912f4b3ed840",
+          "recipientUa": "[redacted]",
+          "amountZat": "100000",
+          "memoDisplay": "Airlock live demo [hidden suffix 00 45 56 49 4c]",
+          "feeZat": null,
+          "expiryHeight": null,
+          "artifactSha256": "89d57c09885743a0ccfaeb15f3807760b65601b9bdfdab28cf9eebbcddbd8c5b",
+          "source": "trusted-builder"
+        },
+        "createdAt": "2026-10-21T21:49:46.179Z",
+        "updatedAt": "2026-10-21T21:50:19.668Z",
+        "txid": null,
+        "minedHeight": null,
+        "artifactId": null,
+        "artifactSha256": null,
+        "signedAt": null,
+        "broadcastAttempts": 0,
+        "stages": [
+          {
+            "state": "queued",
+            "at": "2026-10-21T21:49:46.179Z"
+          },
+          {
+            "state": "preparing",
+            "at": "2026-10-21T21:49:46.229Z"
+          },
+          {
+            "state": "proving",
+            "at": "2026-10-21T21:49:48.754Z"
+          },
+          {
+            "state": "signing",
+            "at": "2026-10-21T21:50:18.678Z"
+          },
+          {
+            "state": "rejected",
+            "at": "2026-10-21T21:50:19.668Z"
+          }
+        ],
+        "error": {
+          "code": "E_POLICY_MEMO",
+          "message": "The proposed memo bytes do not exactly match the approved memo.",
+          "stage": "gate",
+          "retryable": false
+        }
+      },
+      {
+        "id": "bbed312763f49a7b80e4bc9acbaaa679",
+        "mode": "live-testnet",
+        "approvalId": "m1b-recipient",
+        "scenario": "changed-recipient",
+        "state": "rejected",
+        "checks": [
+          {
+            "field": "network",
+            "status": "unknown",
+            "approvedDisplay": "testnet",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "recipient",
+            "status": "mismatch",
+            "approvedDisplay": "[redacted-testnet-ua]",
+            "proposedDisplay": "not inspected",
+            "reasonCode": "E_POLICY_RECIPIENT",
+            "source": "gate"
+          },
+          {
+            "field": "amount",
+            "status": "unknown",
+            "approvedDisplay": "100000 zats (0.00100000 ZEC)",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "fee",
+            "status": "unknown",
+            "approvedDisplay": "at most 10000 zats (0.00010000 ZEC)",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "memo",
+            "status": "unknown",
+            "approvedDisplay": "Airlock live demo",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "change",
+            "status": "unknown",
+            "approvedDisplay": "wallet change only",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "authorization",
+            "status": "unknown",
+            "approvedDisplay": "single-use approval",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "expiry",
+            "status": "unknown",
+            "approvedDisplay": "expires 2026-10-28T21:36:37.000Z",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          }
+        ],
+        "proposal": {
+          "txid": "8a867c4c76799a4ee10b58d80c0775824bebbff3b998d754fae2474d95dd9fd3",
+          "recipientUa": "[redacted]",
+          "amountZat": "100000",
+          "memoDisplay": "Airlock live demo",
+          "feeZat": null,
+          "expiryHeight": null,
+          "artifactSha256": "885fe98eef957ba69e76046ef69a3dcddf4eacd1f875b7d65119142e925f3d59",
+          "source": "trusted-builder"
+        },
+        "createdAt": "2026-10-21T21:48:43.043Z",
+        "updatedAt": "2026-10-21T21:49:06.325Z",
+        "txid": null,
+        "minedHeight": null,
+        "artifactId": null,
+        "artifactSha256": null,
+        "signedAt": null,
+        "broadcastAttempts": 0,
+        "stages": [
+          {
+            "state": "queued",
+            "at": "2026-10-21T21:48:43.043Z"
+          },
+          {
+            "state": "preparing",
+            "at": "2026-10-21T21:48:43.144Z"
+          },
+          {
+            "state": "proving",
+            "at": "2026-10-21T21:48:45.749Z"
+          },
+          {
+            "state": "signing",
+            "at": "2026-10-21T21:49:06.038Z"
+          },
+          {
+            "state": "rejected",
+            "at": "2026-10-21T21:49:06.325Z"
+          }
+        ],
+        "error": {
+          "code": "E_POLICY_RECIPIENT",
+          "message": "The proposed destination does not match the approved recipient.",
+          "stage": "gate",
+          "retryable": false
+        }
+      },
+      {
+        "id": "6b3fb4c19be86492dc6a63279775df31",
+        "mode": "live-testnet",
+        "approvalId": "m1b-recipient",
+        "scenario": "changed-recipient",
+        "state": "blocked",
+        "checks": [
+          {
+            "field": "network",
+            "status": "unknown",
+            "approvedDisplay": "testnet",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "recipient",
+            "status": "unknown",
+            "approvedDisplay": "[redacted-testnet-ua]",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "amount",
+            "status": "unknown",
+            "approvedDisplay": "100000 zats (0.00100000 ZEC)",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "fee",
+            "status": "unknown",
+            "approvedDisplay": "at most 10000 zats (0.00010000 ZEC)",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "memo",
+            "status": "unknown",
+            "approvedDisplay": "Airlock live demo",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "change",
+            "status": "unknown",
+            "approvedDisplay": "wallet change only",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "authorization",
+            "status": "unknown",
+            "approvedDisplay": "single-use approval",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          },
+          {
+            "field": "expiry",
+            "status": "unknown",
+            "approvedDisplay": "expires 2026-10-28T21:36:37.000Z",
+            "proposedDisplay": null,
+            "reasonCode": "not separately confirmed after the gate stopped at the first failure",
+            "source": "gate"
+          }
+        ],
+        "proposal": null,
+        "createdAt": "2026-10-21T21:42:30.584Z",
+        "updatedAt": "2026-10-21T21:42:35.498Z",
+        "txid": null,
+        "minedHeight": null,
+        "artifactId": null,
+        "artifactSha256": null,
+        "signedAt": null,
+        "broadcastAttempts": 0,
+        "stages": [
+          {
+            "state": "queued",
+            "at": "2026-10-21T21:42:30.584Z"
+          },
+          {
+            "state": "preparing",
+            "at": "2026-10-21T21:42:30.659Z"
+          },
+          {
+            "state": "blocked",
+            "at": "2026-10-21T21:42:35.498Z"
+          }
+        ],
+        "error": {
+          "code": "E_FUNDS_UNAVAILABLE",
+          "message": "The demo wallet does not currently hold enough spendable testnet funds.",
+          "stage": "build",
+          "retryable": true
+        }
+      },
+      {
+        "id": "d1144830c44db34be879ad4d3039830c",
+        "mode": "live-testnet",
+        "approvalId": "m1b-match",
+        "scenario": "matching",
+        "state": "confirmed",
+        "checks": [
+          {
+            "field": "network",
+            "status": "match",
+            "approvedDisplay": "testnet",
+            "proposedDisplay": "testnet",
+            "source": "gate"
+          },
+          {
+            "field": "recipient",
+            "status": "match",
+            "approvedDisplay": "[redacted-testnet-ua]",
+            "proposedDisplay": "[redacted-testnet-ua]",
+            "source": "gate"
+          },
+          {
+            "field": "amount",
+            "status": "match",
+            "approvedDisplay": "100000 zats (0.00100000 ZEC)",
+            "proposedDisplay": "100000 zats (0.00100000 ZEC)",
+            "source": "gate"
+          },
+          {
+            "field": "fee",
+            "status": "match",
+            "approvedDisplay": "at most 10000 zats (0.00010000 ZEC)",
+            "proposedDisplay": "within the approved maximum",
+            "source": "gate"
+          },
+          {
+            "field": "memo",
+            "status": "match",
+            "approvedDisplay": "Airlock live demo",
+            "proposedDisplay": "Airlock live demo",
+            "source": "gate"
+          },
+          {
+            "field": "change",
+            "status": "match",
+            "approvedDisplay": "wallet change only",
+            "proposedDisplay": "gate accepted the output set",
+            "source": "gate"
+          },
+          {
+            "field": "authorization",
+            "status": "match",
+            "approvedDisplay": "single-use approval",
+            "proposedDisplay": "approval accepted",
+            "source": "gate"
+          },
+          {
+            "field": "expiry",
+            "status": "match",
+            "approvedDisplay": "expires 2026-10-28T21:36:37.000Z",
+            "proposedDisplay": "within the gate window",
+            "source": "gate"
+          }
+        ],
+        "proposal": {
+          "txid": "2dc1c04f73bb7525f6ca5dfc62219da2109da37641719635c5a09cc82417fcab",
+          "recipientUa": "[redacted]",
+          "amountZat": "100000",
+          "memoDisplay": "Airlock live demo",
+          "feeZat": null,
+          "expiryHeight": null,
+          "artifactSha256": "ee2b4041ee497b2b5151edd9a80c32d20123e371f14b16c6f3a8629e356b96bc",
+          "source": "trusted-builder"
+        },
+        "createdAt": "2026-10-21T21:40:07.103Z",
+        "updatedAt": "2026-10-21T21:42:23.943Z",
+        "txid": "2dc1c04f73bb7525f6ca5dfc62219da2109da37641719635c5a09cc82417fcab",
+        "minedHeight": 4526860,
+        "artifactId": "art_1b32d2e1fd7f8cb3",
+        "artifactSha256": "12c183d3c7d7fde6f71749fd610f85a1f7fa8841d020045fa33a03f270c5a763",
+        "signedAt": "2026-10-21T21:40:27.666Z",
+        "broadcastAttempts": 1,
+        "stages": [
+          {
+            "state": "queued",
+            "at": "2026-10-21T21:40:07.103Z"
+          },
+          {
+            "state": "preparing",
+            "at": "2026-10-21T21:40:07.154Z"
+          },
+          {
+            "state": "proving",
+            "at": "2026-10-21T21:40:10.531Z"
+          },
+          {
+            "state": "signing",
+            "at": "2026-10-21T21:40:26.686Z"
+          },
+          {
+            "state": "signed",
+            "at": "2026-10-21T21:40:27.667Z"
+          },
+          {
+            "state": "broadcasting",
+            "at": "2026-10-21T21:40:29.170Z"
+          },
+          {
+            "state": "pending",
+            "at": "2026-10-21T21:40:37.358Z"
+          },
+          {
+            "state": "confirmed",
+            "at": "2026-10-21T21:42:23.943Z"
+          }
+        ],
+        "error": null
+      }
+    ]
+  },
+  "receipts": {
+    "mode": "live-testnet",
+    "receipts": [
+      {
+        "id": "rcpt_6dfd2bdcc197dd75",
+        "mode": "live-testnet",
+        "jobId": "2a1060fabba9595fe80c153a4998da48",
+        "approvalId": "m1b-memo",
+        "decision": "rejected",
+        "reasonCode": "E_POLICY_MEMO",
+        "txid": null,
+        "networkStatus": "not-broadcast",
+        "minedHeight": null,
+        "createdAt": "2026-10-21T21:50:19.596Z"
+      },
+      {
+        "id": "rcpt_53170ef0847dde91",
+        "mode": "live-testnet",
+        "jobId": "bbed312763f49a7b80e4bc9acbaaa679",
+        "approvalId": "m1b-recipient",
+        "decision": "rejected",
+        "reasonCode": "E_POLICY_RECIPIENT",
+        "txid": null,
+        "networkStatus": "not-broadcast",
+        "minedHeight": null,
+        "createdAt": "2026-10-21T21:49:06.282Z"
+      },
+      {
+        "id": "rcpt_61ca1859584452ce",
+        "mode": "live-testnet",
+        "jobId": "d1144830c44db34be879ad4d3039830c",
+        "approvalId": "m1b-match",
+        "decision": "signed",
+        "reasonCode": "SIGN_OK",
+        "txid": "2dc1c04f73bb7525f6ca5dfc62219da2109da37641719635c5a09cc82417fcab",
+        "networkStatus": "confirmed",
+        "minedHeight": 4526860,
+        "createdAt": "2026-10-21T21:40:27.560Z",
+        "artifactSha256": "12c183d3c7d7fde6f71749fd610f85a1f7fa8841d020045fa33a03f270c5a763"
+      }
+    ]
+  }
+}

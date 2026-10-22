@@ -1,0 +1,8 @@
+Airlock M3 fixture-only UI checks
+
+Synthetic fixtures. Not proof of signing, broadcast, mining, or recovery.
+No real approval, demo set, payment, or live service was used.
+
+scenarios: no-approvals, no-funds, gate-unavailable, signed, pending, broadcast_unknown
+result: PASS
+browser_errors: 0

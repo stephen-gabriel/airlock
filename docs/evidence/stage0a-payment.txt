@@ -1,0 +1,57 @@
+# Sanitized evidence — AIRLOCK Stage 0A
+collected: 2026-10-18T08:49:55+01:00
+
+## PCZT intent (inspect of payment.created / p2.created)
+2 Ironwood actions:
+- 0:
+  - Spend: Zero value (likely a dummy)
+  - Output: 7490000 zatoshis
+- 1:
+  - Spend: 12500000 zatoshis
+  - Output: 5000000 zatoshis to utest1<redacted>
+
+TxID: 49e805a8e56ccecb8781f66e5d4ce805fda67d271dd8c0691dd7770135ce79dc
+Version: V6
+
+## Recipient list-tx (receipt of 0.05 TAZ + memo)
+Transactions:
+49e805a8e56ccecb8781f66e5d4ce805fda67d271dd8c0691dd7770135ce79dc
+     Mined: 4514498 (2026-10-18 7:44:14.0 +00:00:00)
+    Amount:   0.05000000 TAZ
+  Fee paid:   0.00010000 TAZ
+  Sent 0 notes, received 1 notes, 1 memos
+  Output 1 (Ironwood)
+    Value:   0.05000000 TAZ
+    Received by account: [redacted-account] (AirlockRecipient)
+    To: utest1<redacted>
+    Memo: Memo::Text("Airlock Stage0A z2z test")
+
+## Recipient balance summary lines
+     Height: 4514499
+    Balance:   0.05000000 TAZ
+     Sapling Spendable:   0.00000000 TAZ
+     Orchard Spendable:   0.00000000 TAZ
+    Ironwood Spendable:   0.00000000 TAZ
+  Unshielded Spendable:   0.00000000 TAZ
+
+## Sender list-tx (outgoing side)
+49e805a8e56ccecb8781f66e5d4ce805fda67d271dd8c0691dd7770135ce79dc
+     Mined: 4514498 (2026-10-18 7:44:14.0 +00:00:00)
+    Amount:   0.05010000 TAZ
+  Fee paid:   0.00010000 TAZ
+  Sent 1 notes, received 0 notes, 1 memos
+  Output 0 (Ironwood)
+    Value:   0.07490000 TAZ (Change)
+    Memo: Memo::Empty
+  Output 1 (Ironwood)
+    Value:   0.05000000 TAZ
+    Sent from account: [redacted-account] (AirlockSender)
+    To: utest1<redacted>
+    Memo: Memo::Text("Airlock Stage0A z2z test")
+
+## get-info (server/chain)
+recipient: {"chain_name":"test","chain_tip_height":4514504,"server_uri":"https://testnet.zec.rocks:443"}
+
+## Faucet claim
+faucet_txid=49646050c472b35d1861ffb28532b1b01a4131be66a4f7d73acd2e46426388ff amount_taz=0.125 pool=Ironwood
+payment_txid=49e805a8e56ccecb8781f66e5d4ce805fda67d271dd8c0691dd7770135ce79dc amount_taz=0.05 fee_taz=0.0001 mined_height=4514498

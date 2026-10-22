@@ -1,0 +1,21 @@
+{
+  "name": "@airlock/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Airlock constrained public API and trusted wallet worker",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:m2": "node --test test/m2-api.test.mjs",
+    "start:api": "node dist/apps/api/src/main.js",
+    "start:worker": "node dist/apps/api/src/worker.js"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3"
+  }
+}

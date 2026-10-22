@@ -1,0 +1,53 @@
+/* Live-testnet additions. The supplied Airlock visual system is unchanged. */
+.demo-banner.warn{border-color:#dcc79b;background:#f7f1df;color:#6b572b}
+.demo-banner.error{border-color:#e0bbae;background:#fbede7;color:#7b3a31}
+.demo-banner .banner-actions{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.demo-banner .banner-actions .text-btn{min-height:30px;padding:4px 0;font-size:11px;white-space:nowrap}
+.tag.offline{border-color:#e3c4b9;background:#fbede7;color:var(--red)}
+.tag.gate{border-color:#cbdcc3;background:#eef4e7;color:#2e5a42}
+.chip-note{font-size:9px;opacity:.75;margin-left:4px}
+.scenario:disabled{opacity:.5}
+.unknown{color:var(--amber)}
+.comparison td.unknown{background:#fbf6e8}
+.job-meta{margin-top:11px;display:grid;gap:7px;border-top:1px solid #d8e2d2;padding-top:10px}
+.job-meta div{display:grid;grid-template-columns:92px minmax(0,1fr);gap:8px;align-items:start}
+.job-meta span{font-size:9px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);padding-top:2px}
+.job-meta code,.job-meta strong{font-size:10px;overflow-wrap:anywhere;word-break:break-word;color:var(--ink);font-weight:500}
+.mono-wrap{overflow-wrap:anywhere;word-break:break-all}
+.live-action-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.live-action-row .btn{flex-shrink:0}
+.action-area .action-copy{max-width:540px}
+.action-area .action-copy p{margin-top:0;font-size:11px;color:var(--muted);line-height:1.55}
+.live-note{font-size:10px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.live-note .dot{background:var(--teal)}
+.live-note.offline .dot{background:var(--red)}
+.session-line{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:4px}
+.approval-card{padding:20px}
+.approval-card .eyebrow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.approval-card h3{font-size:17px;margin-bottom:8px}
+.approval-card p{font-size:11px;margin-top:5px;color:var(--muted);line-height:1.55}
+.approval-card .status-pill{margin-top:13px;display:inline-block}
+.receipt-body{min-width:0;flex:1}
+.receipt-body h3{font-size:13px}
+.receipt-body .mono-wrap{font-size:10px;margin-top:4px;color:var(--muted)}
+.receipt-item{align-items:flex-start}
+.receipt-item .tag{margin-left:auto;flex-shrink:0}
+.receipt-details{display:grid;gap:4px;margin-top:7px}
+.receipt-details span{font-size:10px;color:var(--muted)}
+.receipt-details code{font-size:10px;overflow-wrap:anywhere}
+.receipt-empty-note{margin-top:12px;font-size:11px;color:var(--muted)}
+.guide-code{display:block;margin-top:8px;background:#f4f4ec;border:1px solid var(--line);border-radius:6px;padding:10px;overflow-wrap:anywhere}
+.result .live-action-row{margin-top:12px}
+@media(max-width:700px){
+  .demo-banner{flex-wrap:wrap}
+  .demo-banner .banner-actions{margin-left:25px}
+  .top-actions .text-btn{display:none}
+  .job-meta div{grid-template-columns:1fr}
+  .job-meta span{padding-top:0}
+  .receipt-item{flex-wrap:wrap}
+  .receipt-item .tag{margin-left:35px}
+  .live-action-row .btn{width:100%}
+}
+@media(max-width:380px){
+  .demo-banner .banner-actions{width:calc(100% - 33px);margin-left:33px;justify-content:flex-start}
+}

@@ -1,0 +1,3342 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 00cae0b..9e7eff4 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -505,6 +505,15 @@ dependencies = [
+  "bytemuck",
+ ]
+ 
++[[package]]
++name = "atomic-polyfill"
++version = "1.0.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "8cf2bce30dfe09ef0bfaef228b9d414faaf7e563035494d7fe092dba54b300f4"
++dependencies = [
++ "critical-section",
++]
++
+ [[package]]
+ name = "atomic-waker"
+ version = "1.1.2"
+@@ -2973,6 +2982,15 @@ dependencies = [
+  "tracing",
+ ]
+ 
++[[package]]
++name = "hash32"
++version = "0.2.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "b0c35f58762feb77d74ebe43bdbc3210f09be9fe6742234d573bacc26ed92b67"
++dependencies = [
++ "byteorder",
++]
++
+ [[package]]
+ name = "hashbrown"
+ version = "0.12.3"
+@@ -3019,6 +3037,20 @@ dependencies = [
+  "hashbrown 0.15.5",
+ ]
+ 
++[[package]]
++name = "heapless"
++version = "0.7.17"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "cdc6457c0eb62c71aac4bc17216026d8410337c4126773b9c5daba343f17964f"
++dependencies = [
++ "atomic-polyfill",
++ "hash32",
++ "rustc_version",
++ "serde",
++ "spin",
++ "stable_deref_trait",
++]
++
+ [[package]]
+ name = "heck"
+ version = "0.5.0"
+@@ -5214,6 +5246,7 @@ dependencies = [
+  "cobs",
+  "embedded-io 0.4.0",
+  "embedded-io 0.6.1",
++ "heapless",
+  "serde",
+ ]
+ 
+@@ -9578,6 +9611,7 @@ dependencies = [
+  "groth16",
+  "group 0.14.0",
+  "hex",
++ "hmac 0.12.1",
+  "hyper-util",
+  "image",
+  "incrementalmerkletree",
+@@ -9590,6 +9624,7 @@ dependencies = [
+  "orchard",
+  "pczt",
+  "phf 0.11.3",
++ "postcard",
+  "prost",
+  "qrcode",
+  "rand 0.10.3",
+diff --git a/Cargo.toml b/Cargo.toml
+index 3aa6c5e..136b594 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -82,6 +82,8 @@ phf = { version = "0.11", features = ["macros"] }
+ regex = "1"
+ serde_json = "1"
+ sha2 = "0.10"
++hmac = "0.12"
++postcard = { version = "1", features = ["alloc"] }
+ sha3 = "0.10"
+ uint = "0.10"
+ zcash_encoding = "0.5"
+diff --git a/examples/memo_probe.rs b/examples/memo_probe.rs
+new file mode 100644
+index 0000000..721a089
+--- /dev/null
++++ b/examples/memo_probe.rs
+@@ -0,0 +1,77 @@
++use std::convert::Infallible;
++use std::io::Read;
++
++use anyhow::anyhow;
++use bip0039::{English, Mnemonic};
++use orchard::keys::{FullViewingKey, Scope, SpendingKey};
++use pczt::{Pczt, roles::verifier::Verifier};
++use zcash_keys::keys::UnifiedSpendingKey;
++use zcash_protocol::consensus::Network;
++use zip32::AccountId;
++
++fn main() -> Result<(), anyhow::Error> {
++    let mut a = std::env::args().skip(1);
++    let wallet = a.next().expect("wallet dir");
++    let identity = a.next().expect("identity file");
++    let file = a.next().expect("pczt file");
++
++    let keys_str = std::fs::read_to_string(format!("{wallet}/keys.toml"))?;
++    #[derive(serde::Deserialize)]
++    struct Keys {
++        mnemonic: Option<String>,
++    }
++    let keys: Keys = toml::from_str(&keys_str)?;
++    let ciphertext = keys.mnemonic.ok_or_else(|| anyhow!("no mnemonic in keys.toml"))?;
++
++    let identities = age::IdentityFile::from_file(identity)?.into_identities()?;
++    let decryptor = age::Decryptor::new(age::armor::ArmoredReader::new(ciphertext.as_bytes()))?;
++    let mut buf = vec![];
++    decryptor
++        .decrypt(identities.iter().map(|i| i.as_ref() as _))?
++        .read_to_end(&mut buf)?;
++    let phrase = std::str::from_utf8(&buf)?;
++    let mnemonic = Mnemonic::<English>::from_phrase(phrase)?;
++    let seed = mnemonic.to_seed("");
++
++    let usk = UnifiedSpendingKey::from_seed(&Network::TestNetwork, &seed, AccountId::ZERO)?;
++    let sk: &SpendingKey = usk.orchard();
++    let fvk = FullViewingKey::from(sk);
++    let ivk_ext = fvk.to_ivk(Scope::External).prepare();
++    let ivk_int = fvk.to_ivk(Scope::Internal).prepare();
++
++    let pczt = Pczt::parse(&std::fs::read(&file)?).map_err(|e| anyhow!("{e:?}"))?;
++    let _ = Verifier::new(pczt)
++        .with_ironwood::<Infallible, _>(|bundle| {
++            let ver = *bundle.bundle_version();
++            for (i, action) in bundle.actions().iter().enumerate() {
++                let r = action
++                    .decrypt_output_with_ivk(&ivk_ext, ver)
++                    .and_then(|o| {
++                        if o.is_some() {
++                            Ok(o)
++                        } else {
++                            action.decrypt_output_with_ivk(&ivk_int, ver)
++                        }
++                    });
++                match r {
++                    Ok(Some((_note, _addr, memo))) => {
++                        let text = if memo[0] == 0xf4 {
++                            let end = memo[1..].iter().position(|&b| b == 0).unwrap_or(511);
++                            String::from_utf8_lossy(&memo[1..1 + end]).to_string()
++                        } else {
++                            format!("<tag {:02x}>", memo[0])
++                        };
++                        println!(
++                            "action {i}: decrypts with IVK; memo_tag={:02x} memo_text={text:?}",
++                            memo[0]
++                        );
++                    }
++                    Ok(None) => println!("action {i}: not decryptable with IVK"),
++                    Err(e) => println!("action {i}: error {e:?}"),
++                }
++            }
++            Ok::<(), pczt::roles::verifier::OrchardError<Infallible>>(())
++        })
++        .map_err(|e| anyhow!("{e:?}"))?;
++    Ok(())
++}
+diff --git a/examples/pczt_probe.rs b/examples/pczt_probe.rs
+new file mode 100644
+index 0000000..9f4007b
+--- /dev/null
++++ b/examples/pczt_probe.rs
+@@ -0,0 +1,49 @@
++use std::convert::Infallible;
++
++use pczt::{Pczt, roles::{signer::Signer, verifier::Verifier}};
++
++fn main() {
++    let path = std::env::args().nth(1).expect("usage: pczt_probe <file>");
++    let bytes = std::fs::read(&path).expect("read");
++    let pczt = Pczt::parse(&bytes).expect("parse");
++    let sighash = Signer::new(pczt.clone()).expect("signer").shielded_sighash();
++    let _ = Verifier::new(pczt)
++        .with_ironwood::<Infallible, _>(|bundle| {
++            for (i, action) in bundle.actions().iter().enumerate() {
++                let spend = action.spend();
++                println!("action {i}:");
++                println!("  value = {:?}", spend.value().as_ref().map(|v| v.inner()));
++                println!("  recipient_set = {}", spend.recipient().is_some());
++                println!("  dummy_sk = {}", spend.dummy_sk().is_some());
++                println!("  alpha = {}", spend.alpha().is_some());
++                println!("  zip32_derivation = {}", spend.zip32_derivation().is_some());
++                println!("  fvk_set = {}", spend.fvk().is_some());
++                let out = action.output();
++                if let Some(r) = spend.recipient().as_ref() {
++                    println!("  spend_recipient_raw = {}", hex_encode(&r.to_raw_address_bytes()));
++                }
++                if let Some(v) = out.value().as_ref() {
++                    println!("  output_value = {}", v.inner());
++                }
++                if let Some(r) = out.recipient().as_ref() {
++                    println!("  output_recipient_raw = {}", hex_encode(&r.to_raw_address_bytes()));
++                }
++                if let Some(fvk) = spend.fvk() {
++                    println!("  fvk_hex = {}", hex_encode(&fvk.to_bytes()));
++                }
++                match spend.spend_auth_sig().as_ref() {
++                    Some(sig) => {
++                        let ok = spend.rk().verify(&sighash, sig).is_ok();
++                        println!("  spend_auth_sig = present (valid_for_sighash = {ok})");
++                    }
++                    None => println!("  spend_auth_sig = None"),
++                }
++            }
++            Ok::<(), pczt::roles::verifier::OrchardError<Infallible>>(())
++        })
++        .expect("verify");
++}
++
++fn hex_encode(b: &[u8]) -> String {
++    b.iter().map(|x| format!("{x:02x}")).collect()
++}
+diff --git a/src/commands.rs b/src/commands.rs
+index cd4ef60..541be56 100644
+--- a/src/commands.rs
++++ b/src/commands.rs
+@@ -4,6 +4,7 @@ use uuid::Uuid;
+ use zcash_client_backend::data_api::WalletRead;
+ use zcash_client_sqlite::AccountUuid;
+ 
++pub(crate) mod airlock_gate;
+ pub(crate) mod create_multisig_address;
+ pub(crate) mod inspect;
+ pub(crate) mod migration;
+diff --git a/src/commands/airlock_gate/approval.rs b/src/commands/airlock_gate/approval.rs
+new file mode 100644
+index 0000000..d96d002
+--- /dev/null
++++ b/src/commands/airlock_gate/approval.rs
+@@ -0,0 +1,819 @@
++//! Approval records and the HMAC-authenticated, atomic approval store.
++//!
++//! Approvals are created only by the trusted operator (`approve`). The untrusted
++//! proposer reaches signing only through a Unix-socket request that carries an
++//! approval ID and proposal bytes; it has no code path to create, edit, or
++//! abandon approvals and never receives wallet or identity configuration.
++//!
++//! Store invariants:
++//! - one record per approval, written atomically (record + MAC in one file,
++//!   temp file + fsync + rename within the protected directory);
++//! - every transition (create / reserve / complete / abandon) is serialized by
++//!   an advisory per-approval lock (`File::try_lock`);
++//! - a bound transaction id is never cleared, and an abandoned or completed
++//!   approval can never authorize a different transaction;
++//! - any unreadable, malformed, or MAC-invalid state fails closed.
++
++use std::{
++    fs::{self, File, OpenOptions, TryLockError},
++    io::Write,
++    os::unix::fs::{OpenOptionsExt, PermissionsExt},
++    path::{Path, PathBuf},
++    str::FromStr,
++    time::{SystemTime, UNIX_EPOCH},
++};
++
++use hmac::{Hmac, Mac};
++use sha2::Sha256;
++use zcash_protocol::memo::{Memo, MemoBytes};
++
++use super::validate::{GateError, Stage};
++
++type HmacSha256 = Hmac<Sha256>;
++
++pub const REASON_NO_APPROVAL: &str = "E_AUTH_NO_APPROVAL";
++pub const REASON_TAMPERED: &str = "E_AUTH_TAMPERED";
++pub const REASON_CONSUMED: &str = "E_AUTH_CONSUMED";
++pub const REASON_IN_USE: &str = "E_AUTH_IN_USE";
++pub const REASON_EXISTS: &str = "E_AUTH_EXISTS";
++pub const REASON_ARTIFACT_EXISTS: &str = "E_AUTH_ARTIFACT_EXISTS";
++pub const REASON_STATE_CORRUPT: &str = "E_STATE_CORRUPT";
++pub const REASON_PATH_UNSAFE: &str = "E_PATH_UNSAFE";
++pub const REASON_MEMO_UNSUPPORTED: &str = "E_MEMO_UNSUPPORTED";
++
++const MAX_ID_LEN: usize = 64;
++const MAX_RECORD_BYTES: u64 = 64 * 1024;
++const MAX_ARTIFACT_BYTES: u64 = 16 * 1024 * 1024;
++const RECORD_VERSION: u32 = 1;
++
++#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
++#[serde(rename_all = "snake_case")]
++pub enum MemoPolicy {
++    /// Exact UTF-8 memo text. Comparison is against the canonical 512-byte
++    /// ZIP 302 encoding produced by the pinned `MemoBytes` implementation,
++    /// byte for byte; there is no NUL truncation or prefix stripping.
++    Exact(String),
++    /// The library's canonical empty memo (`MemoBytes::empty()`: 0xf6 + zeros).
++    Empty,
++}
++
++#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
++pub struct Approval {
++    pub id: String,
++    pub network: String,
++    pub recipient_ua: String,
++    pub amount_zatoshis: u64,
++    pub max_fee_zatoshis: u64,
++    pub memo_policy: MemoPolicy,
++    /// Hex of the canonical 512-byte memo encoding. Written at creation and
++    /// covered by the MAC; a record whose hex disagrees with its policy is
++    /// treated as tampered. Absent legacy records omit it from their MAC input.
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    pub memo_canonical_hex: Option<String>,
++    /// Unix seconds after which this approval may no longer authorize a new payment.
++    pub expires_at_unix: u64,
++    /// Single-payment authorization semantics: once a txid is bound, only that txid
++    /// may complete under this approval.
++    pub single_payment: bool,
++    /// Set when the approval has been bound to a transaction (reserved or completed).
++    /// Never cleared once set.
++    pub bound_txid: Option<String>,
++    /// Status of consumption.
++    pub status: ApprovalStatus,
++    /// File name (relative to `signed/`) of the signed PCZT for idempotent retry.
++    pub signed_artifact: Option<String>,
++    /// Unix seconds when the record was created / last updated.
++    pub created_at_unix: u64,
++    pub updated_at_unix: u64,
++}
++
++#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
++#[serde(rename_all = "snake_case")]
++pub enum ApprovalStatus {
++    Pending,
++    /// Reserved for a specific txid; not available for a different payment.
++    Reserved,
++    Completed,
++    /// Trusted recovery: abandoned by the operator (never by the requester).
++    /// The bound txid, if any, is retained.
++    Abandoned,
++}
++
++/// Canonical bytes covered by the MAC (everything except the MAC field itself).
++#[derive(serde::Serialize)]
++struct ApprovalEnvelope<'a> {
++    #[serde(flatten)]
++    approval: &'a Approval,
++}
++
++#[derive(serde::Serialize, serde::Deserialize)]
++struct StoredRecord {
++    version: u32,
++    approval: Approval,
++    mac: String,
++}
++
++pub struct ApprovalStore {
++    root: PathBuf,
++    mac_key: Vec<u8>,
++}
++
++/// Holds an exclusive per-approval advisory lock for the lifetime of the guard.
++pub struct ApprovalLock {
++    _file: File,
++}
++
++fn store_err(reason: &'static str, detail: impl Into<String>) -> GateError {
++    GateError::new(reason, Stage::Authorization, detail)
++}
++
++fn io_err(what: &str, e: std::io::Error) -> GateError {
++    // Deliberately excludes the path so proposer-visible errors never leak
++    // operator filesystem layout.
++    store_err(REASON_STATE_CORRUPT, format!("{what}: {}", e.kind()))
++}
++
++/// Approval IDs are operator-chosen capabilities; constrain them to a bounded
++/// allowlist so they can never escape the approvals directory.
++pub fn validate_id(id: &str) -> Result<(), GateError> {
++    if id.is_empty() || id.len() > MAX_ID_LEN {
++        return Err(store_err(
++            REASON_PATH_UNSAFE,
++            format!("approval id must be 1..={MAX_ID_LEN} bytes"),
++        ));
++    }
++    if id.starts_with('.') {
++        return Err(store_err(
++            REASON_PATH_UNSAFE,
++            "approval id must not start with '.'",
++        ));
++    }
++    if !id
++        .bytes()
++        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
++    {
++        return Err(store_err(
++            REASON_PATH_UNSAFE,
++            "approval id allows only [A-Za-z0-9._-]",
++        ));
++    }
++    if id.contains("..") {
++        return Err(store_err(REASON_PATH_UNSAFE, "approval id must not contain '..'"));
++    }
++    Ok(())
++}
++
++pub fn is_txid_hex(s: &str) -> bool {
++    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
++}
++
++/// Canonical ZIP 302 encoding for an approved text memo.
++///
++/// Rejects text the pinned encoder cannot represent faithfully:
++/// - empty text (use the `empty` policy; `Memo::from_str("")` means "no memo");
++/// - embedded NUL bytes (ZIP 302 text memos must not contain 0x00, and NUL
++///   truncation in any consumer would hide bytes);
++/// - text longer than 512 bytes.
++pub fn canonical_text_memo(text: &str) -> Result<[u8; 512], GateError> {
++    if text.is_empty() {
++        return Err(store_err(
++            REASON_MEMO_UNSUPPORTED,
++            "empty text memo is not supported; use the `empty` memo policy",
++        ));
++    }
++    if text.as_bytes().contains(&0) {
++        return Err(store_err(
++            REASON_MEMO_UNSUPPORTED,
++            "text memo must not contain NUL bytes",
++        ));
++    }
++    if text.len() > 512 {
++        return Err(store_err(
++            REASON_MEMO_UNSUPPORTED,
++            format!("text memo is {} bytes; maximum is 512", text.len()),
++        ));
++    }
++    let memo = Memo::from_str(text)
++        .map_err(|e| store_err(REASON_MEMO_UNSUPPORTED, format!("unsupported memo: {e}")))?;
++    if matches!(memo, Memo::Empty) {
++        return Err(store_err(
++            REASON_MEMO_UNSUPPORTED,
++            "empty text memo is not supported; use the `empty` memo policy",
++        ));
++    }
++    Ok(*MemoBytes::from(memo).as_array())
++}
++
++pub fn canonical_empty_memo() -> [u8; 512] {
++    *MemoBytes::empty().as_array()
++}
++
++impl Approval {
++    /// Expected decrypted memo bytes for this approval, exactly.
++    pub fn canonical_memo(&self) -> Result<[u8; 512], GateError> {
++        let expected = match &self.memo_policy {
++            MemoPolicy::Exact(text) => canonical_text_memo(text)?,
++            MemoPolicy::Empty => canonical_empty_memo(),
++        };
++        if let Some(hexed) = &self.memo_canonical_hex {
++            let mut stored = [0u8; 512];
++            hex::decode_to_slice(hexed, &mut stored).map_err(|_| {
++                store_err(REASON_TAMPERED, "approval memo canonical encoding malformed")
++            })?;
++            if stored != expected {
++                return Err(store_err(
++                    REASON_TAMPERED,
++                    "approval memo canonical encoding disagrees with memo policy",
++                ));
++            }
++        }
++        Ok(expected)
++    }
++}
++
++impl ApprovalStore {
++    pub fn open(gate_home: &Path) -> Result<Self, GateError> {
++        let root = gate_home.to_path_buf();
++        ensure_dir(&root)?;
++        for name in ["approvals", "reservations", "signed", "locks"] {
++            ensure_dir(&root.join(name))?;
++        }
++        let key_path = root.join("mac.key");
++        let mac_key = match fs::symlink_metadata(&key_path) {
++            Ok(md) => {
++                if md.file_type().is_symlink() {
++                    return Err(store_err(REASON_PATH_UNSAFE, "mac.key must not be a symlink"));
++                }
++                if !md.file_type().is_file() {
++                    return Err(store_err(REASON_STATE_CORRUPT, "mac.key is not a regular file"));
++                }
++                set_mode(&key_path, 0o600)?;
++                fs::read(&key_path).map_err(|e| io_err("read mac.key", e))?
++            }
++            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
++                let mut key = vec![0u8; 32];
++                getrandom_fill(&mut key)?;
++                write_new(&key_path, &key)?;
++                set_mode(&key_path, 0o600)?;
++                sync_dir(&root)?;
++                key
++            }
++            Err(e) => return Err(io_err("stat mac.key", e)),
++        };
++        if mac_key.len() != 32 {
++            return Err(store_err(REASON_STATE_CORRUPT, "mac.key must be 32 bytes"));
++        }
++        Ok(Self { root, mac_key })
++    }
++
++    fn mac(&self, approval: &Approval) -> Result<Vec<u8>, GateError> {
++        let mut mac = HmacSha256::new_from_slice(&self.mac_key)
++            .map_err(|_| store_err(REASON_STATE_CORRUPT, "HMAC init failed"))?;
++        let body = serde_json::to_vec(&ApprovalEnvelope { approval })
++            .map_err(|e| store_err(REASON_STATE_CORRUPT, format!("encode approval: {e}")))?;
++        mac.update(&body);
++        Ok(mac.finalize().into_bytes().to_vec())
++    }
++
++    fn record_path(&self, id: &str) -> PathBuf {
++        self.root.join("approvals").join(format!("{id}.rec"))
++    }
++
++    fn legacy_paths(&self, id: &str) -> (PathBuf, PathBuf) {
++        (
++            self.root.join("approvals").join(format!("{id}.json")),
++            self.root.join("approvals").join(format!("{id}.mac")),
++        )
++    }
++
++    fn lock_path(&self, id: &str) -> PathBuf {
++        self.root.join("locks").join(format!("{id}.lock"))
++    }
++
++    pub fn reservation_path(&self, id: &str) -> PathBuf {
++        self.root.join("reservations").join(format!("{id}.json"))
++    }
++
++    pub fn signed_dir(&self) -> PathBuf {
++        self.root.join("signed")
++    }
++
++    pub fn artifact_name(txid: &str) -> String {
++        format!("{txid}.pczt")
++    }
++
++    pub fn audit_log_path(&self) -> PathBuf {
++        self.root.join("audit.log")
++    }
++
++    pub fn append_audit(&self, line: &str) {
++        if let Ok(mut f) = OpenOptions::new()
++            .create(true)
++            .append(true)
++            .mode(0o600)
++            .open(self.audit_log_path())
++        {
++            let _ = writeln!(f, "{line}");
++            let _ = f.sync_data();
++        }
++    }
++
++    /// Acquire the exclusive per-approval lock. Non-blocking: a concurrent
++    /// operator/proposer action on the same approval fails with
++    /// `E_AUTH_IN_USE` instead of interleaving transitions.
++    pub fn lock(&self, id: &str) -> Result<ApprovalLock, GateError> {
++        validate_id(id)?;
++        let path = self.lock_path(id);
++        if let Ok(md) = fs::symlink_metadata(&path) {
++            if md.file_type().is_symlink() {
++                return Err(store_err(REASON_PATH_UNSAFE, "lock path must not be a symlink"));
++            }
++        }
++        let file = OpenOptions::new()
++            .read(true)
++            .write(true)
++            .create(true)
++            .mode(0o600)
++            .open(&path)
++            .map_err(|e| io_err("open approval lock", e))?;
++        match file.try_lock() {
++            Ok(()) => Ok(ApprovalLock { _file: file }),
++            Err(TryLockError::WouldBlock) => Err(store_err(
++                REASON_IN_USE,
++                "approval is busy with another operation",
++            )),
++            Err(TryLockError::Error(e)) => Err(io_err("lock approval", e)),
++        }
++    }
++
++    pub fn create(&self, mut approval: Approval) -> Result<Approval, GateError> {
++        validate_id(&approval.id)?;
++        // Fail closed on unsupported memo text before any record is written.
++        approval.canonical_memo()?;
++        approval.created_at_unix = now_unix();
++        approval.updated_at_unix = approval.created_at_unix;
++        approval.status = ApprovalStatus::Pending;
++        approval.bound_txid = None;
++        approval.signed_artifact = None;
++
++        let (legacy_json, legacy_mac) = self.legacy_paths(&approval.id);
++        if legacy_json.exists() || legacy_mac.exists() {
++            return Err(store_err(
++                REASON_EXISTS,
++                format!("approval id already exists: {}", approval.id),
++            ));
++        }
++        let bytes = self.encode_record(&approval)?;
++        let dir = self.root.join("approvals");
++        let tmp = dir.join(unique_tmp_name(".create"));
++        write_new(&tmp, &bytes)?;
++        let result = fs::hard_link(&tmp, self.record_path(&approval.id));
++        let _ = fs::remove_file(&tmp);
++        match result {
++            Ok(()) => {}
++            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
++                return Err(store_err(
++                    REASON_EXISTS,
++                    format!("approval id already exists: {}", approval.id),
++                ));
++            }
++            Err(e) => return Err(io_err("create approval record", e)),
++        }
++        sync_dir(&dir)?;
++        Ok(approval)
++    }
++
++    fn encode_record(&self, approval: &Approval) -> Result<Vec<u8>, GateError> {
++        let record = StoredRecord {
++            version: RECORD_VERSION,
++            approval: approval.clone(),
++            mac: hex::encode(self.mac(approval)?),
++        };
++        serde_json::to_vec_pretty(&record)
++            .map_err(|e| store_err(REASON_STATE_CORRUPT, format!("encode record: {e}")))
++    }
++
++    pub fn load(&self, id: &str) -> Result<(Approval, Vec<u8>), GateError> {
++        validate_id(id)?;
++        let path = self.record_path(id);
++        match fs::symlink_metadata(&path) {
++            Ok(md) if md.file_type().is_symlink() => {
++                return Err(store_err(REASON_PATH_UNSAFE, "approval record must not be a symlink"))
++            }
++            Ok(md) if md.len() > MAX_RECORD_BYTES => {
++                return Err(store_err(REASON_STATE_CORRUPT, "approval record too large"))
++            }
++            Ok(_) => {
++                let bytes = fs::read(&path).map_err(|e| io_err("read approval record", e))?;
++                let rec: StoredRecord = serde_json::from_slice(&bytes)
++                    .map_err(|_| store_err(REASON_STATE_CORRUPT, "approval record malformed"))?;
++                if rec.version != RECORD_VERSION {
++                    return Err(store_err(REASON_STATE_CORRUPT, "unsupported record version"));
++                }
++                if rec.approval.id != id {
++                    return Err(store_err(
++                        REASON_TAMPERED,
++                        "approval record identity does not match requested id",
++                    ));
++                }
++                let mac_bytes = hex::decode(&rec.mac)
++                    .map_err(|_| store_err(REASON_STATE_CORRUPT, "approval MAC malformed"))?;
++                self.verify_mac(&rec.approval, &mac_bytes)?;
++                Ok((rec.approval, mac_bytes))
++            }
++            Err(e) if e.kind() == std::io::ErrorKind::NotFound => self.load_legacy(id),
++            Err(e) => Err(io_err("stat approval record", e)),
++        }
++    }
++
++    /// Read-only compatibility with Stage 0B records (`<id>.json` + `<id>.mac`).
++    fn load_legacy(&self, id: &str) -> Result<(Approval, Vec<u8>), GateError> {
++        let (json_path, mac_path) = self.legacy_paths(id);
++        if !json_path.exists() {
++            return Err(store_err(REASON_NO_APPROVAL, format!("no approval with id {id}")));
++        }
++        if let Ok(md) = fs::symlink_metadata(&json_path) {
++            if md.file_type().is_symlink() {
++                return Err(store_err(REASON_PATH_UNSAFE, "approval record must not be a symlink"));
++            }
++        }
++        let bytes = fs::read(&json_path).map_err(|e| io_err("read legacy record", e))?;
++        let approval: Approval = serde_json::from_slice(&bytes)
++            .map_err(|_| store_err(REASON_STATE_CORRUPT, "legacy approval record malformed"))?;
++        if approval.id != id {
++            return Err(store_err(
++                REASON_TAMPERED,
++                "approval record identity does not match requested id",
++            ));
++        }
++        let mac_bytes = fs::read(&mac_path).map_err(|e| io_err("read legacy MAC", e))?;
++        self.verify_mac(&approval, &mac_bytes)?;
++        Ok((approval, mac_bytes))
++    }
++
++    fn verify_mac(&self, approval: &Approval, mac_bytes: &[u8]) -> Result<(), GateError> {
++        let expected = self.mac(approval)?;
++        if expected.as_slice() != mac_bytes {
++            return Err(store_err(REASON_TAMPERED, "approval MAC mismatch"));
++        }
++        Ok(())
++    }
++
++    /// Persist an updated approval. Caller must hold the per-approval lock.
++    /// The record (terms + MAC) is replaced atomically.
++    pub fn store_locked(&self, approval: &Approval) -> Result<(), GateError> {
++        validate_id(&approval.id)?;
++        let mut updated = approval.clone();
++        updated.updated_at_unix = now_unix();
++        let bytes = self.encode_record(&updated)?;
++        let dir = self.root.join("approvals");
++        write_replace(&dir, &format!("{}.rec", updated.id), &bytes)?;
++        sync_dir(&dir)
++    }
++
++    /// Reserve `id` for `txid`. Caller must hold the per-approval lock.
++    /// The binding (status + txid + reservation) is persisted before the caller
++    /// releases any signature material.
++    pub fn try_reserve(&self, id: &str, txid: &str) -> Result<ReserveOutcome, GateError> {
++        if !is_txid_hex(txid) {
++            return Err(store_err(REASON_STATE_CORRUPT, "binding txid is not lowercase hex64"));
++        }
++        let (mut approval, _) = self.load(id)?;
++        match approval.status {
++            ApprovalStatus::Abandoned => {
++                return Err(store_err(REASON_CONSUMED, "approval abandoned"))
++            }
++            ApprovalStatus::Completed | ApprovalStatus::Reserved => {
++                if approval.bound_txid.as_deref() == Some(txid) {
++                    return Ok(ReserveOutcome::SameTx);
++                }
++                return Err(store_err(
++                    REASON_CONSUMED,
++                    "approval already bound to another transaction",
++                ));
++            }
++            ApprovalStatus::Pending => {}
++        }
++        if self.reservation_path(id).exists() {
++            // A reservation without a Reserved record is ambiguous state.
++            return Err(store_err(
++                REASON_STATE_CORRUPT,
++                "reservation exists while approval is pending",
++            ));
++        }
++        let res = serde_json::json!({
++            "approval_id": id,
++            "txid": txid,
++            "pid": std::process::id(),
++            "at_unix": now_unix(),
++        });
++        let dir = self.root.join("reservations");
++        write_replace(
++            &dir,
++            &format!("{id}.json"),
++            serde_json::to_vec_pretty(&res)
++                .map_err(|e| store_err(REASON_STATE_CORRUPT, format!("encode reservation: {e}")))?
++                .as_slice(),
++        )?;
++        approval.status = ApprovalStatus::Reserved;
++        approval.bound_txid = Some(txid.to_string());
++        self.store_locked(&approval)?;
++        Ok(ReserveOutcome::Acquired)
++    }
++
++    /// Mark a reserved approval completed. Caller must hold the lock and must
++    /// have durably written the artifact first.
++    pub fn mark_completed(
++        &self,
++        id: &str,
++        txid: &str,
++        artifact_name: &str,
++    ) -> Result<(), GateError> {
++        let (mut approval, _) = self.load(id)?;
++        if approval.bound_txid.as_deref() != Some(txid) {
++            return Err(store_err(REASON_CONSUMED, "completion txid mismatch"));
++        }
++        approval.status = ApprovalStatus::Completed;
++        approval.signed_artifact = Some(artifact_name.to_string());
++        self.store_locked(&approval)
++    }
++
++    /// Trusted recovery. Acquires the per-approval lock internally.
++    /// - completed approvals cannot be abandoned;
++    /// - a reserved/bound approval with a persisted artifact cannot be
++    ///   abandoned unless `force`, because a signature may already exist;
++    /// - `force` keeps the bound txid, so the approval still can never
++    ///   authorize a different transaction.
++    pub fn abandon(&self, id: &str, force: bool) -> Result<(), GateError> {
++        let _lock = self.lock(id)?;
++        let (mut approval, _) = self.load(id)?;
++        if approval.status == ApprovalStatus::Completed {
++            return Err(store_err(REASON_CONSUMED, "cannot abandon a completed approval"));
++        }
++        if let Some(txid) = approval.bound_txid.as_deref() {
++            if self.artifact_exists(txid)? && !force {
++                return Err(store_err(
++                    REASON_ARTIFACT_EXISTS,
++                    "a signed artifact exists for this approval; refusing to abandon (use --force, binding is retained)",
++                ));
++            }
++        }
++        approval.status = ApprovalStatus::Abandoned;
++        self.store_locked(&approval)
++    }
++
++    pub fn artifact_exists(&self, txid: &str) -> Result<bool, GateError> {
++        if !is_txid_hex(txid) {
++            return Err(store_err(REASON_STATE_CORRUPT, "artifact txid malformed"));
++        }
++        let path = self.signed_dir().join(Self::artifact_name(txid));
++        match fs::symlink_metadata(&path) {
++            Ok(md) if md.file_type().is_symlink() => Err(store_err(
++                REASON_PATH_UNSAFE,
++                "signed artifact path must not be a symlink",
++            )),
++            Ok(md) if md.file_type().is_file() => Ok(true),
++            Ok(_) => Err(store_err(REASON_STATE_CORRUPT, "signed artifact is not a file")),
++            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
++            Err(e) => Err(io_err("stat artifact", e)),
++        }
++    }
++
++    pub fn read_artifact(&self, txid: &str) -> Result<Vec<u8>, GateError> {
++        let path = self.signed_dir().join(Self::artifact_name(txid));
++        match fs::symlink_metadata(&path) {
++            Ok(md) if md.file_type().is_symlink() => {
++                return Err(store_err(REASON_PATH_UNSAFE, "signed artifact must not be a symlink"))
++            }
++            Ok(md) if md.file_type().is_file() => {}
++            Ok(_) => return Err(store_err(REASON_STATE_CORRUPT, "signed artifact is not a file")),
++            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
++                return Err(store_err(
++                    REASON_STATE_CORRUPT,
++                    "signed artifact missing for completed approval",
++                ))
++            }
++            Err(e) => return Err(io_err("stat artifact", e)),
++        }
++        if fs::metadata(&path).map(|m| m.len()).unwrap_or(u64::MAX) > MAX_ARTIFACT_BYTES {
++            return Err(store_err(REASON_STATE_CORRUPT, "signed artifact too large"));
++        }
++        fs::read(&path).map_err(|e| io_err("read artifact", e))
++    }
++
++    /// Durably write the signed artifact inside `signed/` (mode 0600, atomic
++    /// replace, symlink-refusing).
++    pub fn write_artifact(&self, txid: &str, bytes: &[u8]) -> Result<(), GateError> {
++        if !is_txid_hex(txid) {
++            return Err(store_err(REASON_STATE_CORRUPT, "artifact txid malformed"));
++        }
++        let dir = self.signed_dir();
++        write_replace(&dir, &Self::artifact_name(txid), bytes)?;
++        sync_dir(&dir)
++    }
++
++    pub fn list(&self) -> Result<Vec<Approval>, GateError> {
++        let dir = self.root.join("approvals");
++        let mut ids = Vec::new();
++        for entry in fs::read_dir(&dir).map_err(|e| io_err("read approvals dir", e))? {
++            let entry = entry.map_err(|e| io_err("read approvals entry", e))?;
++            let name = entry.file_name().to_string_lossy().to_string();
++            let id = if let Some(id) = name.strip_suffix(".rec") {
++                id
++            } else if let Some(id) = name.strip_suffix(".json") {
++                id
++            } else {
++                continue;
++            };
++            if validate_id(id).is_ok() {
++                ids.push(id.to_string());
++            }
++        }
++        ids.sort();
++        ids.dedup();
++        let mut out = Vec::with_capacity(ids.len());
++        for id in ids {
++            // Fail closed: a corrupt record must be surfaced, not hidden.
++            let (approval, _) = self.load(&id)?;
++            out.push(approval);
++        }
++        Ok(out)
++    }
++
++    pub fn signed_path(&self, name: &str) -> PathBuf {
++        self.signed_dir().join(name)
++    }
++}
++
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum ReserveOutcome {
++    Acquired,
++    SameTx,
++}
++
++pub fn now_unix() -> u64 {
++    SystemTime::now()
++        .duration_since(UNIX_EPOCH)
++        .map(|d| d.as_secs())
++        .unwrap_or(0)
++}
++
++fn ensure_dir(path: &Path) -> Result<(), GateError> {
++    match fs::symlink_metadata(path) {
++        Ok(md) if md.file_type().is_symlink() => {
++            return Err(store_err(REASON_PATH_UNSAFE, "gate directory must not be a symlink"))
++        }
++        Ok(md) if !md.file_type().is_dir() => {
++            return Err(store_err(REASON_STATE_CORRUPT, "gate path is not a directory"))
++        }
++        Ok(_) => return set_mode(path, 0o700),
++        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
++        Err(e) => return Err(io_err("stat gate directory", e)),
++    }
++    fs::create_dir_all(path).map_err(|e| io_err("create gate directory", e))?;
++    set_mode(path, 0o700)
++}
++
++fn set_mode(path: &Path, mode: u32) -> Result<(), GateError> {
++    fs::set_permissions(path, fs::Permissions::from_mode(mode))
++        .map_err(|e| io_err("set permissions", e))
++}
++
++fn write_new(path: &Path, bytes: &[u8]) -> Result<(), GateError> {
++    let mut f = OpenOptions::new()
++        .write(true)
++        .create_new(true)
++        .mode(0o600)
++        .open(path)
++        .map_err(|e| io_err("create file", e))?;
++    f.write_all(bytes).map_err(|e| io_err("write file", e))?;
++    f.sync_all().map_err(|e| io_err("sync file", e))?;
++    Ok(())
++}
++
++/// Atomic replace within `dir`: temp file (0600, O_EXCL), fsync, rename, fsync
++/// dir. Refuses to follow a symlink at the target name.
++fn write_replace(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), GateError> {
++    if !name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')) {
++        return Err(store_err(REASON_PATH_UNSAFE, "unsafe file name"));
++    }
++    let target = dir.join(name);
++    if let Ok(md) = fs::symlink_metadata(&target) {
++        if md.file_type().is_symlink() {
++            return Err(store_err(REASON_PATH_UNSAFE, "target path must not be a symlink"));
++        }
++    }
++    let tmp = dir.join(unique_tmp_name(".tmp"));
++    write_new(&tmp, bytes)?;
++    fs::rename(&tmp, &target).map_err(|e| {
++        let _ = fs::remove_file(&tmp);
++        io_err("rename file", e)
++    })?;
++    Ok(())
++}
++
++fn sync_dir(dir: &Path) -> Result<(), GateError> {
++    File::open(dir)
++        .map_err(|e| io_err("open dir", e))?
++        .sync_all()
++        .map_err(|e| io_err("sync dir", e))
++}
++
++fn unique_tmp_name(prefix: &str) -> String {
++    use std::sync::atomic::{AtomicU64, Ordering};
++    static COUNTER: AtomicU64 = AtomicU64::new(0);
++    format!(
++        "{prefix}-{}-{}-{}",
++        std::process::id(),
++        now_unix(),
++        COUNTER.fetch_add(1, Ordering::Relaxed)
++    )
++}
++
++fn getrandom_fill(buf: &mut [u8]) -> Result<(), GateError> {
++    use std::io::Read;
++    let mut f = File::open("/dev/urandom").map_err(|e| io_err("open urandom", e))?;
++    f.read_exact(buf).map_err(|e| io_err("read urandom", e))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[derive(serde::Serialize)]
++    struct LegacyApproval<'a> {
++        id: &'a str,
++        network: &'a str,
++        recipient_ua: &'a str,
++        amount_zatoshis: u64,
++        max_fee_zatoshis: u64,
++        memo_policy: &'a MemoPolicy,
++        expires_at_unix: u64,
++        single_payment: bool,
++        bound_txid: &'a Option<String>,
++        status: ApprovalStatus,
++        signed_artifact: &'a Option<String>,
++        created_at_unix: u64,
++        updated_at_unix: u64,
++    }
++
++    #[test]
++    fn legacy_record_without_memo_canonical_hex_verifies() {
++        let root = std::env::temp_dir().join(unique_tmp_name("airlock-legacy-approval"));
++        let approvals = root.join("approvals");
++        fs::create_dir_all(&approvals).unwrap();
++        let key = [0x42u8; 32];
++        write_new(&root.join("mac.key"), &key).unwrap();
++
++        let approval = Approval {
++            id: "legacy-test".to_string(),
++            network: "test".to_string(),
++            recipient_ua: "utest1legacy".to_string(),
++            amount_zatoshis: 100_000,
++            max_fee_zatoshis: 10_000,
++            memo_policy: MemoPolicy::Empty,
++            memo_canonical_hex: None,
++            expires_at_unix: 1_800_000_000,
++            single_payment: true,
++            bound_txid: None,
++            status: ApprovalStatus::Pending,
++            signed_artifact: None,
++            created_at_unix: 1_700_000_000,
++            updated_at_unix: 1_700_000_000,
++        };
++        let legacy = LegacyApproval {
++            id: &approval.id,
++            network: &approval.network,
++            recipient_ua: &approval.recipient_ua,
++            amount_zatoshis: approval.amount_zatoshis,
++            max_fee_zatoshis: approval.max_fee_zatoshis,
++            memo_policy: &approval.memo_policy,
++            expires_at_unix: approval.expires_at_unix,
++            single_payment: approval.single_payment,
++            bound_txid: &approval.bound_txid,
++            status: approval.status,
++            signed_artifact: &approval.signed_artifact,
++            created_at_unix: approval.created_at_unix,
++            updated_at_unix: approval.updated_at_unix,
++        };
++
++        let body = serde_json::to_vec(&legacy).unwrap();
++        let mut mac = HmacSha256::new_from_slice(&key).unwrap();
++        mac.update(&body);
++        fs::write(
++            approvals.join("legacy-test.json"),
++            serde_json::to_vec_pretty(&legacy).unwrap(),
++        )
++        .unwrap();
++        fs::write(approvals.join("legacy-test.mac"), mac.finalize().into_bytes()).unwrap();
++
++        let store = ApprovalStore::open(&root).unwrap();
++        let listed = store.list().unwrap();
++
++        assert_eq!(listed.len(), 1);
++        assert_eq!(listed[0].id, "legacy-test");
++        assert!(listed[0].memo_canonical_hex.is_none());
++
++        fs::remove_dir_all(&root).unwrap();
++    }
++}
+diff --git a/src/commands/airlock_gate/fixture.rs b/src/commands/airlock_gate/fixture.rs
+new file mode 100644
+index 0000000..5e188d2
+--- /dev/null
++++ b/src/commands/airlock_gate/fixture.rs
+@@ -0,0 +1,266 @@
++//! Test-only PCZT fixture helpers. All commands require
++//! `AIRLOCK_GATE_TEST_FIXTURES=1` and are never part of the untrusted interface.
++
++use std::fs;
++
++use anyhow::anyhow;
++use clap::{Args, Subcommand};
++use pczt::{Pczt, roles::{creator::Creator, redactor::Redactor}};
++
++use super::approval::ApprovalStore;
++use std::path::Path;
++
++#[derive(Debug, Args)]
++pub(crate) struct FixtureCmd {
++    #[arg(long)]
++    pub(crate) gate_home: Option<std::path::PathBuf>,
++    #[arg(long)]
++    pub(crate) wallet: Option<std::path::PathBuf>,
++    #[command(subcommand)]
++    command: FixtureSub,
++}
++
++#[derive(Debug, Subcommand)]
++pub(crate) enum FixtureSub {
++    /// Patch a declared output `value` in the serialized PCZT (breaks cmx binding).
++    PatchOutputValue {
++        input: std::path::PathBuf,
++        output: std::path::PathBuf,
++        value: u64,
++        /// Occurrence index of the original amount bytes to patch (0 = first).
++        #[arg(long, default_value_t = 0)]
++        occurrence: usize,
++        /// Original amount to search for (zatoshis).
++        #[arg(long, default_value_t = 5_000_000)]
++        orig: u64,
++    },
++    /// Redact required verification data (missing-data case).
++    Redact {
++        input: std::path::PathBuf,
++        output: std::path::PathBuf,
++        /// Comma list: recipient, value, rseed, rcv, alpha, witness, fvk
++        #[arg(long, value_delimiter = ',')]
++        clear: Vec<String>,
++    },
++    /// Replace `coin_type` in global fields via postcard mirror round-trip.
++    PatchCoinType {
++        input: std::path::PathBuf,
++        output: std::path::PathBuf,
++        coin_type: u32,
++    },
++    /// Write a minimal Ironwood shell PCZT with no spends (foreign/empty fixture).
++    EmptyShell { output: std::path::PathBuf },
++    /// Drop bytes to corrupt the encoding.
++    Corrupt {
++        input: std::path::PathBuf,
++        output: std::path::PathBuf,
++        #[arg(long, default_value_t = 8)]
++        drop_at: usize,
++    },
++}
++
++fn require_test_mode() -> Result<(), anyhow::Error> {
++    if std::env::var("AIRLOCK_GATE_TEST_FIXTURES").as_deref() != Ok("1") {
++        anyhow::bail!("fixture commands require AIRLOCK_GATE_TEST_FIXTURES=1");
++    }
++    Ok(())
++}
++
++fn leb128(mut n: u64) -> Vec<u8> {
++    let mut out = vec![];
++    while n >= 0x80 {
++        out.push((n as u8 & 0x7f) | 0x80);
++        n >>= 7;
++    }
++    out.push(n as u8);
++    out
++}
++
++pub(crate) fn run(
++    cmd: FixtureCmd,
++    _store: &ApprovalStore,
++    wallet: Option<&Path>,
++    _identity: Option<&Path>,
++) -> Result<(), anyhow::Error> {
++    require_test_mode()?;
++    match cmd.command {
++        FixtureSub::PatchOutputValue {
++            input,
++            output,
++            value,
++            occurrence,
++            orig,
++        } => {
++            let bytes = fs::read(&input)?;
++            let _ = Pczt::parse(&bytes)?;
++            let needle = leb128(orig);
++            let positions: Vec<usize> = bytes
++                .windows(needle.len())
++                .enumerate()
++                .filter(|(_, w)| *w == needle.as_slice())
++                .map(|(i, _)| i)
++                .collect();
++            if positions.is_empty() {
++                anyhow::bail!("original value bytes not found");
++            }
++            if occurrence >= positions.len() {
++                anyhow::bail!("occurrence {occurrence} out of range ({})", positions.len());
++            }
++            let pos = positions[occurrence];
++            let new_leb = leb128(value);
++            if new_leb.len() != needle.len() {
++                anyhow::bail!(
++                    "patched value encoding length {} != original {} (choose a value with the same varint length)",
++                    new_leb.len(),
++                    needle.len()
++                );
++            }
++            let mut patched = bytes;
++            patched[pos..pos + needle.len()].copy_from_slice(&new_leb);
++            fs::write(&output, patched)?;
++            println!("PATCHED_OUTPUT_VALUE value={value} pos={pos} occ={occurrence}");
++            Ok(())
++        }
++        FixtureSub::Redact {
++            input,
++            output,
++            clear,
++        } => {
++            const KNOWN: [&str; 7] = [
++                "recipient",
++                "value",
++                "rseed",
++                "rcv",
++                "alpha",
++                "witness",
++                "fvk",
++            ];
++            for c in &clear {
++                if !KNOWN.contains(&c.as_str()) {
++                    anyhow::bail!("unknown redact target: {c}");
++                }
++            }
++            let pczt = Pczt::parse(&fs::read(&input)?)?;
++            let mut r = Redactor::new(pczt);
++            for c in &clear {
++                r = r.redact_ironwood_with(|mut bundle_red| {
++                    bundle_red.redact_actions(|mut act| {
++                        match c.as_str() {
++                            "recipient" => {
++                                act.clear_spend_recipient();
++                                act.clear_output_recipient();
++                            }
++                            "value" => {
++                                act.clear_spend_value();
++                                act.clear_output_value();
++                            }
++                            "rseed" => {
++                                act.clear_spend_rseed();
++                                act.clear_output_rseed();
++                            }
++                            "rcv" => act.clear_rcv(),
++                            "alpha" => act.clear_spend_alpha(),
++                            "witness" => act.clear_spend_witness(),
++                            "fvk" => act.clear_spend_fvk(),
++                            _ => unreachable!("validated above"),
++                        }
++                    });
++                });
++            }
++            let redacted = r.finish();
++            let bytes = redacted
++                .serialize()
++                .map_err(|e| anyhow!("serialize: {e:?}"))?;
++            fs::write(&output, bytes)?;
++            println!("REDACTED clear={clear:?}");
++            Ok(())
++        }
++        FixtureSub::PatchCoinType {
++            input,
++            output,
++            coin_type,
++        } => {
++            let g = fs::read(&input)?;
++            #[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq)]
++            struct GlobalMirror {
++                tx_version: u32,
++                version_group_id: u32,
++                consensus_branch_id: u32,
++                fallback_lock_time: Option<u32>,
++                expiry_height: u32,
++                coin_type: u32,
++                tx_modifiable: u8,
++                proprietary: std::collections::BTreeMap<String, Vec<u8>>,
++            }
++            let mut patched = None;
++            for off in 0..64.min(g.len()) {
++                let Ok(mirror) = postcard::from_bytes::<GlobalMirror>(&g[off..]) else {
++                    continue;
++                };
++                if mirror.consensus_branch_id != 0x7719_0ad9 {
++                    continue;
++                }
++                let Ok(orig_enc) = postcard::to_extend(&mirror, vec![]) else {
++                    continue;
++                };
++                if g[off..].get(..orig_enc.len()) != Some(orig_enc.as_slice()) {
++                    continue;
++                }
++                let mut new_mirror = mirror.clone();
++                new_mirror.coin_type = coin_type;
++                let Ok(new_enc) = postcard::to_extend(&new_mirror, vec![]) else {
++                    continue;
++                };
++                if new_enc.len() != orig_enc.len() {
++                    continue;
++                }
++                let mut out = g[..off].to_vec();
++                out.extend_from_slice(&new_enc);
++                out.extend_from_slice(&g[off + orig_enc.len()..]);
++                patched = Some(out);
++                break;
++            }
++            let patched = patched.ok_or_else(|| anyhow!("Global mirror not found"))?;
++            // Sanity: still parses.
++            let _ = Pczt::parse(&patched)?;
++            fs::write(&output, patched)?;
++            println!("PATCHED_COIN_TYPE -> {coin_type}");
++            Ok(())
++        }
++        FixtureSub::EmptyShell { output } => {
++            // Expiry must look plausible relative to the current tip so the
++            // fixture fails on the intended check (no signable spend), not on
++            // the expiry check. Margin of ~100 blocks stays within the
++            // plausibility window (tip..tip+10000).
++            let tip = wallet
++                .and_then(super::tip_via_devtool)
++                .unwrap_or(4_520_000);
++            let expiry = tip.saturating_add(100).max(tip + 1);
++            let pczt = Creator::new(0x7719_0ad9, expiry, 1, None, None)
++                .map_err(|e| anyhow!("creator: {e:?}"))?
++                .build()
++                .map_err(|e| anyhow!("build: {e:?}"))?;
++            let bytes = pczt
++                .serialize()
++                .map_err(|e| anyhow!("serialize: {e:?}"))?;
++            fs::write(&output, bytes)?;
++            println!("EMPTY_SHELL written expiry={expiry}");
++            Ok(())
++        }
++        FixtureSub::Corrupt {
++            input,
++            output,
++            drop_at,
++        } => {
++            let bytes = fs::read(&input)?;
++            if bytes.len() <= drop_at + 8 {
++                anyhow::bail!("corrupt: input too short");
++            }
++            let mut out = bytes[..drop_at].to_vec();
++            out.extend_from_slice(&bytes[drop_at + 8..]);
++            fs::write(&output, out)?;
++            println!("CORRUPTED dropped 8 bytes at {drop_at}");
++            Ok(())
++        }
++    }
++}
+diff --git a/src/commands/airlock_gate/mod.rs b/src/commands/airlock_gate/mod.rs
+new file mode 100644
+index 0000000..25d1655
+--- /dev/null
++++ b/src/commands/airlock_gate/mod.rs
+@@ -0,0 +1,912 @@
++//! AIRLOCK Stage 0B repair: protected signing gate.
++//!
++//! Trust boundary:
++//! - Trusted operator: `approve`, `approvals`, `validate`, `sign`, `fixture`,
++//!   and `serve` are operator-side commands. They require readable wallet +
++//!   identity configuration and read/write access to the gate home.
++//! - Untrusted proposer: reaches signing only through `submit`, which speaks a
++//!   fixed Unix-socket protocol carrying an approval ID and PCZT bytes. It
++//!   accepts no wallet, identity, gate-home, or output-path configuration and
++//!   has no request type for creating or abandoning approvals.
++//! - The OS boundary (separate UID or an equivalent mount-namespace sandbox)
++//!   is what prevents the proposer from reading the gate home, wallet, or
++//!   identity. Same-UID arbitrary code is NOT defended against; see
++//!   `STAGE0B_REPAIR.md`.
++
++use std::{
++    fs,
++    io::{self, Read, Write},
++    os::unix::{
++        fs::{FileTypeExt, OpenOptionsExt, PermissionsExt},
++        net::{UnixListener, UnixStream},
++    },
++    path::{Path, PathBuf},
++    process::Command as Proc,
++    time::Duration,
++};
++
++use anyhow::anyhow;
++use clap::{Args, Subcommand};
++use pczt::Pczt;
++
++use self::approval::{
++    Approval, ApprovalStatus, ApprovalStore, MemoPolicy, ReserveOutcome, canonical_empty_memo,
++    canonical_text_memo, now_unix,
++};
++use self::validate::{
++    GateError, Stage, load_keys, sign_validated, validate,
++};
++
++pub(crate) mod approval;
++pub(crate) mod fixture;
++pub(crate) mod validate;
++
++const IPV_VERSION: u8 = 1;
++const REQ_MAGIC: [u8; 4] = *b"ALG1";
++const RESP_MAGIC: [u8; 4] = *b"ALR1";
++const MAX_ID_BYTES: usize = 64;
++const MAX_PCZT_BYTES: usize = 4 * 1024 * 1024;
++const MAX_MESSAGE_BYTES: usize = 2048;
++
++#[derive(Debug, Args)]
++pub(crate) struct Command {
++    #[command(subcommand)]
++    command: GateSub,
++}
++
++#[derive(Debug, Subcommand)]
++pub(crate) enum GateSub {
++    /// Create a single-payment approval (operator only).
++    Approve(ApproveCmd),
++    /// List or abandon approvals (operator only).
++    Approvals(ApprovalsCmd),
++    /// Sign a proposal with full local configuration (operator only).
++    Sign(SignCmd),
++    /// Validate a proposal without signing (operator only).
++    Validate(ValidateCmd),
++    /// Serve the restricted proposer interface over a Unix socket (operator only).
++    Serve(ServeCmd),
++    /// Submit a proposal to a running gate (restricted proposer interface).
++    Submit(SubmitCmd),
++    /// Test-only fixture helpers; require AIRLOCK_GATE_TEST_FIXTURES=1.
++    Fixture(fixture::FixtureCmd),
++}
++
++#[derive(Debug, Args)]
++pub(crate) struct ApproveCmd {
++    /// Path to the gate home directory (approvals, MAC key, audit log).
++    /// Defaults to $AIRLOCK_GATE_HOME or ~/.airlock-gate.
++    #[arg(long)]
++    gate_home: Option<PathBuf>,
++    /// Unique approval ID (bounded allowlist, immutable once created).
++    #[arg(long)]
++    id: String,
++    /// Recipient unified address (testnet).
++    #[arg(long)]
++    recipient: String,
++    /// Exact amount in zatoshis.
++    #[arg(long)]
++    amount: u64,
++    /// Maximum fee in zatoshis the gate will accept.
++    #[arg(long)]
++    max_fee: u64,
++    /// Memo policy: `exact:<text>` or `empty`.
++    #[arg(long)]
++    memo_policy: String,
++    /// Approval lifetime in seconds from now.
++    #[arg(long, default_value_t = 3600)]
++    expires_in: u64,
++}
++
++#[derive(Debug, Args)]
++pub(crate) struct ApprovalsCmd {
++    #[arg(long)]
++    gate_home: Option<PathBuf>,
++    #[command(subcommand)]
++    command: ApprovalsSub,
++}
++
++#[derive(Debug, Subcommand)]
++pub(crate) enum ApprovalsSub {
++    List,
++    /// Trusted recovery: abandon a pending/reserved approval.
++    Abandon {
++        id: String,
++        /// Allow abandoning even if a signed artifact exists. The bound txid is
++        /// retained, so the approval can never authorize a different payment.
++        #[arg(long)]
++        force: bool,
++    },
++}
++
++#[derive(Debug, Args)]
++pub(crate) struct SignCmd {
++    #[arg(long)]
++    gate_home: Option<PathBuf>,
++    #[arg(long)]
++    wallet: PathBuf,
++    #[arg(long)]
++    identity: PathBuf,
++    #[arg(long)]
++    proposal: PathBuf,
++    #[arg(long)]
++    approval_id: String,
++    #[arg(long)]
++    output: PathBuf,
++}
++
++#[derive(Debug, Args)]
++pub(crate) struct ValidateCmd {
++    #[arg(long)]
++    gate_home: Option<PathBuf>,
++    #[arg(long)]
++    wallet: PathBuf,
++    #[arg(long)]
++    identity: PathBuf,
++    #[arg(long)]
++    proposal: PathBuf,
++    #[arg(long)]
++    approval_id: String,
++}
++
++#[derive(Debug, Args)]
++pub(crate) struct ServeCmd {
++    #[arg(long)]
++    gate_home: Option<PathBuf>,
++    #[arg(long)]
++    wallet: PathBuf,
++    #[arg(long)]
++    identity: PathBuf,
++    /// Operator-chosen socket path in a directory the proposer can reach
++    /// (e.g. /run/airlock/gate.sock). Mode 0660 is applied.
++    #[arg(long)]
++    socket: PathBuf,
++}
++
++/// Restricted proposer interface: no wallet/identity/gate-home/output flags.
++#[derive(Debug, Args)]
++pub(crate) struct SubmitCmd {
++    #[arg(long)]
++    socket: PathBuf,
++    #[arg(long)]
++    approval_id: String,
++    #[arg(long)]
++    proposal: PathBuf,
++    /// Proposer-side output path; defaults to stdout. Absolute server-side
++    /// paths are never accepted by the gate.
++    #[arg(long)]
++    output: Option<PathBuf>,
++}
++
++fn resolve_gate_home(explicit: Option<PathBuf>) -> PathBuf {
++    if let Some(p) = explicit {
++        return p;
++    }
++    if let Ok(p) = std::env::var("AIRLOCK_GATE_HOME") {
++        return PathBuf::from(p);
++    }
++    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".airlock-gate")
++}
++
++fn fixtures_enabled() -> bool {
++    std::env::var("AIRLOCK_GATE_TEST_FIXTURES").as_deref() == Ok("1")
++}
++
++fn parse_memo_policy(s: &str) -> Result<(MemoPolicy, [u8; 512]), anyhow::Error> {
++    let policy = if s == "empty" {
++        MemoPolicy::Empty
++    } else if let Some(t) = s.strip_prefix("exact:") {
++        MemoPolicy::Exact(t.to_string())
++    } else {
++        anyhow::bail!("memo-policy must be `empty` or `exact:<text>`")
++    };
++    let canonical = match &policy {
++        MemoPolicy::Exact(text) => canonical_text_memo(text)?,
++        MemoPolicy::Empty => canonical_empty_memo(),
++    };
++    Ok((policy, canonical))
++}
++
++struct GateContext {
++    keys: validate::GateKeys,
++    params: crate::data::Network,
++    wallet: PathBuf,
++}
++
++impl GateContext {
++    fn load(wallet: &Path, identity: &Path) -> Result<Self, anyhow::Error> {
++        let config = crate::config::WalletConfig::read(Some(wallet))?;
++        if !matches!(config.network(), crate::data::Network::Test) {
++            return Err(anyhow::Error::new(GateError::new(
++                "E_WALLET_NETWORK",
++                Stage::Scope,
++                "trusted wallet is not configured for testnet",
++            )));
++        }
++        let params = crate::data::Network::Test;
++        let keys = load_keys(wallet, identity, &params)?;
++        Ok(Self {
++            keys,
++            params,
++            wallet: wallet.to_path_buf(),
++        })
++    }
++
++    /// A trustworthy local chain tip is mandatory. There is no "skip check"
++    /// path: if the wallet cannot report a positive tip, signing is refused.
++    fn require_tip(&self) -> Result<u32, anyhow::Error> {
++        if fixtures_enabled()
++            && std::env::var("AIRLOCK_GATE_TEST_FORCE_TIP_UNAVAILABLE").as_deref() == Ok("1")
++        {
++            return Err(anyhow::Error::new(GateError::new(
++                "E_TIP_UNAVAILABLE",
++                Stage::Expiry,
++                "chain tip unavailable (forced by test fixture)",
++            )));
++        }
++        match tip_via_devtool(&self.wallet) {
++            Some(tip) if tip > 0 => Ok(tip),
++            _ => Err(anyhow::Error::new(GateError::new(
++                "E_TIP_UNAVAILABLE",
++                Stage::Expiry,
++                "local wallet chain tip unavailable; refusing to sign",
++            ))),
++        }
++    }
++}
++
++impl Command {
++    pub(crate) async fn run(self) -> Result<(), anyhow::Error> {
++        match self.command {
++            GateSub::Approve(c) => run_approve(c),
++            GateSub::Approvals(c) => run_approvals(c),
++            GateSub::Sign(c) => run_sign(c),
++            GateSub::Validate(c) => run_validate(c),
++            GateSub::Serve(c) => run_serve(c),
++            GateSub::Submit(c) => run_submit(c),
++            GateSub::Fixture(c) => {
++                let home = resolve_gate_home(c.gate_home.clone());
++                let store = ApprovalStore::open(&home)?;
++                let wallet = c.wallet.clone();
++                fixture::run(c, &store, wallet.as_deref(), None)
++            }
++        }
++    }
++}
++
++fn run_approve(c: ApproveCmd) -> Result<(), anyhow::Error> {
++    let home = resolve_gate_home(c.gate_home);
++    let store = ApprovalStore::open(&home)?;
++    let (policy, canonical) = parse_memo_policy(&c.memo_policy)?;
++    let approval = Approval {
++        id: c.id.clone(),
++        network: "test".to_string(),
++        recipient_ua: c.recipient,
++        amount_zatoshis: c.amount,
++        max_fee_zatoshis: c.max_fee,
++        memo_policy: policy,
++        memo_canonical_hex: Some(hex::encode(canonical)),
++        expires_at_unix: now_unix() + c.expires_in,
++        single_payment: true,
++        bound_txid: None,
++        status: ApprovalStatus::Pending,
++        signed_artifact: None,
++        created_at_unix: 0,
++        updated_at_unix: 0,
++    };
++    let a = store.create(approval)?;
++    store.append_audit(&format!(
++        "APPROVE id={} amount={} max_fee={} recipient={} expires_at={} memo_bytes={}",
++        a.id,
++        a.amount_zatoshis,
++        a.max_fee_zatoshis,
++        a.recipient_ua,
++        a.expires_at_unix,
++        a.memo_canonical_hex.as_deref().map(str::len).unwrap_or(0) / 2
++    ));
++    println!(
++        "APPROVED id={} amount_zat={} max_fee_zat={} memo_policy={:?} expires_at={}",
++        a.id, a.amount_zatoshis, a.max_fee_zatoshis, a.memo_policy, a.expires_at_unix
++    );
++    Ok(())
++}
++
++fn run_approvals(c: ApprovalsCmd) -> Result<(), anyhow::Error> {
++    let home = resolve_gate_home(c.gate_home);
++    let store = ApprovalStore::open(&home)?;
++    match c.command {
++        ApprovalsSub::List => {
++            for a in store.list()? {
++                println!(
++                    "{} status={:?} amount={} max_fee={} bound={:?} artifact={:?} expires_at={}",
++                    a.id,
++                    a.status,
++                    a.amount_zatoshis,
++                    a.max_fee_zatoshis,
++                    a.bound_txid,
++                    a.signed_artifact,
++                    a.expires_at_unix
++                );
++            }
++            Ok(())
++        }
++        ApprovalsSub::Abandon { id, force } => {
++            store.abandon(&id, force)?;
++            store.append_audit(&format!("ABANDON id={id} force={force}"));
++            println!("ABANDONED id={id}");
++            Ok(())
++        }
++    }
++}
++
++fn run_validate(c: ValidateCmd) -> Result<(), anyhow::Error> {
++    let home = resolve_gate_home(c.gate_home);
++    let store = ApprovalStore::open(&home)?;
++    let ctx = GateContext::load(&c.wallet, &c.identity)?;
++    let bytes = read_proposal(&c.proposal)?;
++    let pczt = Pczt::parse(&bytes)
++        .map_err(|e| gate_err("E_PARSE", Stage::Parse, format!("{e:?}")))?;
++    let (approval, _) = store.load(&c.approval_id)?;
++    let tip = ctx.require_tip()?;
++    let v = validate(&pczt, &approval, &ctx.keys, &ctx.params, tip)?;
++    store.append_audit(&format!(
++        "VALIDATE id={} proposal_sha256={} fee={} signable={:?} => OK",
++        c.approval_id,
++        sha256_hex(&bytes),
++        v.fee_zatoshis,
++        v.signable_spends
++    ));
++    println!(
++        "VALIDATE_OK fee_zat={} signable_spends={:?} change={:?} memo=exact-bytes",
++        v.fee_zatoshis, v.signable_spends, v.change_indices
++    );
++    Ok(())
++}
++
++fn run_sign(c: SignCmd) -> Result<(), anyhow::Error> {
++    let home = resolve_gate_home(c.gate_home);
++    let store = ApprovalStore::open(&home)?;
++    let ctx = GateContext::load(&c.wallet, &c.identity)?;
++    let bytes = read_proposal(&c.proposal)?;
++    // Reject an unsafe output path before any signature is produced.
++    check_output_path(&c.output)?;
++    let out = sign_core(&ctx, &store, &bytes, &c.approval_id)?;
++    write_output_file(&c.output, &out.bytes)?;
++    let code = if out.recovered {
++        "SIGN_RECOVERED_OK"
++    } else {
++        "SIGN_OK"
++    };
++    match out.fee_zatoshis {
++        Some(fee) => println!(
++            "{code} approval={} txid={} verified_spends={:?} fee_zat={}",
++            c.approval_id, out.txid, out.verified, fee
++        ),
++        None => println!(
++            "{code} approval={} txid={} (retained artifact)",
++            c.approval_id, out.txid
++        ),
++    }
++    Ok(())
++}
++
++struct SignedOutcome {
++    txid: String,
++    bytes: Vec<u8>,
++    verified: Vec<usize>,
++    fee_zatoshis: Option<u64>,
++    recovered: bool,
++}
++
++fn sign_core(
++    ctx: &GateContext,
++    store: &ApprovalStore,
++    bytes: &[u8],
++    approval_id: &str,
++) -> Result<SignedOutcome, anyhow::Error> {
++    approval::validate_id(approval_id)?;
++    let input_sha = sha256_hex(bytes);
++    let pczt = Pczt::parse(bytes)
++        .map_err(|e| gate_err("E_PARSE", Stage::Parse, format!("{e:?}")))?;
++    let txid = txid_of(&pczt)?;
++
++    // Serialize all transitions for this approval (create/abandon are
++    // serialized by the same lock).
++    let _lock = store.lock(approval_id)?;
++    let (approval, _) = store.load(approval_id)?;
++
++    match approval.status {
++        ApprovalStatus::Abandoned => {
++            return Err(gate_err(
++                "E_AUTH_CONSUMED",
++                Stage::Authorization,
++                "approval abandoned",
++            ))
++        }
++        ApprovalStatus::Completed => {
++            if approval.bound_txid.as_deref() != Some(txid.as_str()) {
++                return Err(gate_err(
++                    "E_AUTH_CONSUMED",
++                    Stage::Authorization,
++                    "approval already committed to a different payment",
++                ));
++            }
++            let artifact = load_verified_artifact(store, &txid)?;
++            store.append_audit(&format!(
++                "SIGN_RETRY id={approval_id} txid={txid} bytes={}",
++                artifact.len()
++            ));
++            return Ok(SignedOutcome {
++                txid,
++                bytes: artifact,
++                verified: Vec::new(),
++                fee_zatoshis: None,
++                recovered: true,
++            });
++        }
++        ApprovalStatus::Reserved => {
++            if approval.bound_txid.as_deref() != Some(txid.as_str()) {
++                return Err(gate_err(
++                    "E_AUTH_CONSUMED",
++                    Stage::Authorization,
++                    "approval already bound to another transaction",
++                ));
++            }
++            // Bounded restart recovery for the SAME bound transaction: a
++            // persisted artifact means signing already happened; never re-sign.
++            if store.artifact_exists(&txid)? {
++                let artifact = load_verified_artifact(store, &txid)?;
++                store.mark_completed(approval_id, &txid, &ApprovalStore::artifact_name(&txid))?;
++                store.append_audit(&format!(
++                    "SIGN_RECOVERED id={approval_id} txid={txid} bytes={}",
++                    artifact.len()
++                ));
++                return Ok(SignedOutcome {
++                    txid,
++                    bytes: artifact,
++                    verified: Vec::new(),
++                    fee_zatoshis: None,
++                    recovered: true,
++                });
++            }
++            // No persisted signature: resume validation/signing for this txid.
++        }
++        ApprovalStatus::Pending => {
++            // Artifacts are keyed by txid and may legitimately exist because a
++            // different approval already signed the same transaction. A pending
++            // approval has no persisted signature of its own; signing is safe
++            // and overwrites the artifact with an equivalent one for the same
++            // txid.
++        }
++    }
++
++    let tip = ctx.require_tip()?;
++    let validated = validate(&pczt, &approval, &ctx.keys, &ctx.params, tip)?;
++
++    let mut reserved = false;
++    if approval.status == ApprovalStatus::Pending {
++        match store.try_reserve(approval_id, &txid)? {
++            ReserveOutcome::Acquired => reserved = true,
++            ReserveOutcome::SameTx => {}
++        }
++    }
++    crash_point("reserve");
++    store.append_audit(&format!(
++        "RESERVE id={approval_id} txid={txid} input_sha256={input_sha} recovered={}",
++        !reserved
++    ));
++
++    // Sign the same in-memory object that was validated.
++    let (signed, verified) = match sign_validated(pczt, &ctx.keys, &validated) {
++        Ok(r) => r,
++        Err(e) => {
++            store.append_audit(&format!(
++                "SIGN_FAIL id={approval_id} txid={txid} reason={}",
++                e.reason
++            ));
++            return Err(anyhow::Error::new(e));
++        }
++    };
++
++    let signed_bytes = signed
++        .serialize()
++        .map_err(|e| gate_err("E_SERIALIZE", Stage::Signing, format!("{e:?}")))?;
++    crash_point("artifact");
++    // Durability order: artifact first, then completion record, then success.
++    store.write_artifact(&txid, &signed_bytes)?;
++    crash_point("complete");
++    let artifact_name = ApprovalStore::artifact_name(&txid);
++    store.mark_completed(approval_id, &txid, &artifact_name)?;
++    store.append_audit(&format!(
++        "SIGN_OK id={approval_id} txid={txid} verified_spends={verified:?} fee={} bytes={}",
++        validated.fee_zatoshis,
++        signed_bytes.len()
++    ));
++    Ok(SignedOutcome {
++        txid,
++        bytes: signed_bytes,
++        verified,
++        fee_zatoshis: Some(validated.fee_zatoshis),
++        recovered: false,
++    })
++}
++
++fn load_verified_artifact(store: &ApprovalStore, txid: &str) -> Result<Vec<u8>, anyhow::Error> {
++    let bytes = store.read_artifact(txid)?;
++    let pczt = Pczt::parse(&bytes)
++        .map_err(|_| gate_err("E_STATE_CORRUPT", Stage::Authorization, "artifact unparsable"))?;
++    let actual = txid_of(&pczt)?;
++    if actual != txid {
++        return Err(gate_err(
++            "E_STATE_CORRUPT",
++            Stage::Authorization,
++            "artifact txid does not match approval binding",
++        ));
++    }
++    Ok(bytes)
++}
++
++fn txid_of(pczt: &Pczt) -> Result<String, anyhow::Error> {
++    use zcash_primitives::transaction::txid::{TxIdDigester, to_txid};
++    let effects = pczt
++        .clone()
++        .into_effects()
++        .map_err(|e| gate_err("E_BIND", Stage::Parse, format!("{e:?}")))?;
++    let txid_parts = effects.digest(TxIdDigester);
++    Ok(to_txid(
++        effects.version(),
++        effects.consensus_branch_id(),
++        &txid_parts,
++    )
++    .to_string())
++}
++
++fn read_proposal(path: &Path) -> Result<Vec<u8>, anyhow::Error> {
++    let md = fs::symlink_metadata(path).map_err(|e| anyhow!("proposal unreadable: {}", e.kind()))?;
++    if md.file_type().is_symlink() {
++        return Err(gate_err(
++            "E_PATH_UNSAFE",
++            Stage::Parse,
++            "proposal path must not be a symlink",
++        ));
++    }
++    if md.len() > MAX_PCZT_BYTES as u64 {
++        return Err(gate_err("E_PARSE", Stage::Parse, "proposal too large"));
++    }
++    fs::read(path).map_err(|e| anyhow!("proposal unreadable: {}", e.kind()))
++}
++
++fn check_output_path(path: &Path) -> Result<(), anyhow::Error> {
++    if let Ok(md) = fs::symlink_metadata(path) {
++        if md.file_type().is_symlink() {
++            return Err(gate_err(
++                "E_PATH_UNSAFE",
++                Stage::Signing,
++                "output path must not be a symlink",
++            ));
++        }
++        if md.is_dir() {
++            return Err(gate_err(
++                "E_PATH_UNSAFE",
++                Stage::Signing,
++                "output path is a directory",
++            ));
++        }
++    }
++    Ok(())
++}
++
++fn write_output_file(path: &Path, bytes: &[u8]) -> Result<(), anyhow::Error> {
++    check_output_path(path)?;
++    let parent = path
++        .parent()
++        .filter(|p| !p.as_os_str().is_empty())
++        .unwrap_or_else(|| Path::new("."));
++    let tmp = parent.join(format!(
++        ".airlock-out-{}-{}",
++        std::process::id(),
++        now_unix()
++    ));
++    let mut f = fs::OpenOptions::new()
++        .write(true)
++        .create_new(true)
++        .mode(0o600)
++        .open(&tmp)
++        .map_err(|e| anyhow!("output unreadable: {}", e.kind()))?;
++    f.write_all(bytes)?;
++    f.sync_all()?;
++    drop(f);
++    fs::rename(&tmp, path).map_err(|e| {
++        let _ = fs::remove_file(&tmp);
++        anyhow!("output write failed: {}", e.kind())
++    })?;
++    let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
++    Ok(())
++}
++
++fn run_serve(c: ServeCmd) -> Result<(), anyhow::Error> {
++    let home = resolve_gate_home(c.gate_home);
++    let store = ApprovalStore::open(&home)?;
++    let ctx = GateContext::load(&c.wallet, &c.identity)?;
++    let listener = bind_socket(&c.socket)?;
++    println!("SERVE_READY socket={}", c.socket.display());
++    store.append_audit(&format!(
++        "SERVE_START socket={} wallet={} gate_home={}",
++        c.socket.display(),
++        c.wallet.display(),
++        home.display()
++    ));
++    for stream in listener.incoming() {
++        match stream {
++            Ok(stream) => {
++                if let Err(e) = handle_connection(stream, &store, &ctx) {
++                    eprintln!("SUBMIT_INTERNAL {e:#}");
++                }
++            }
++            Err(e) => eprintln!("ACCEPT_ERR {}", e.kind()),
++        }
++    }
++    Ok(())
++}
++
++fn bind_socket(path: &Path) -> Result<UnixListener, anyhow::Error> {
++    if let Ok(md) = fs::symlink_metadata(path) {
++        if !md.file_type().is_socket() {
++            return Err(gate_err(
++                "E_PATH_UNSAFE",
++                Stage::Parse,
++                "socket path exists and is not a socket",
++            ));
++        }
++        if UnixStream::connect(path).is_ok() {
++            anyhow::bail!("gate socket already in use");
++        }
++        fs::remove_file(path)?;
++    }
++    let listener = UnixListener::bind(path)
++        .map_err(|e| anyhow!("cannot bind socket: {}", e.kind()))?;
++    fs::set_permissions(path, fs::Permissions::from_mode(0o660))?;
++    Ok(listener)
++}
++
++fn handle_connection(
++    mut stream: UnixStream,
++    store: &ApprovalStore,
++    ctx: &GateContext,
++) -> Result<(), anyhow::Error> {
++    stream.set_read_timeout(Some(Duration::from_secs(15)))?;
++    stream.set_write_timeout(Some(Duration::from_secs(15)))?;
++    let (id, bytes) = match read_request(&mut stream) {
++        Ok(v) => v,
++        Err(e) => {
++            let _ = write_response(&mut stream, false, "E_PARSE", &format!("bad request: {e}"), &[]);
++            return Ok(());
++        }
++    };
++    store.append_audit(&format!(
++        "SUBMIT id={id} bytes={} sha256={}",
++        bytes.len(),
++        sha256_hex(&bytes)
++    ));
++    match sign_core(ctx, store, &bytes, &id) {
++        Ok(out) => {
++            let code = if out.recovered {
++                "SIGN_RECOVERED_OK"
++            } else {
++                "SIGN_OK"
++            };
++            store.append_audit(&format!(
++                "SUBMIT_OK id={id} txid={} recovered={} bytes={}",
++                out.txid,
++                out.recovered,
++                out.bytes.len()
++            ));
++            write_response(
++                &mut stream,
++                true,
++                code,
++                &format!("txid={} approved=true", out.txid),
++                &out.bytes,
++            )?;
++        }
++        Err(e) => {
++            // Only gate errors (already path-sanitized) are exposed to the
++            // proposer; everything else is logged operator-side.
++            let (code, message) = match e.downcast_ref::<GateError>() {
++                Some(g) => (g.reason, g.detail.clone()),
++                None => {
++                    eprintln!("SUBMIT_INTERNAL {e:#}");
++                    ("E_INTERNAL", "internal error".to_string())
++                }
++            };
++            store.append_audit(&format!("SUBMIT_ERR id={id} code={code}"));
++            write_response(&mut stream, false, code, &message, &[])?;
++        }
++    }
++    Ok(())
++}
++
++fn run_submit(c: SubmitCmd) -> Result<(), anyhow::Error> {
++    approval::validate_id(&c.approval_id)?;
++    if let Some(path) = &c.output {
++        check_output_path(path)?;
++    }
++    let bytes = read_proposal(&c.proposal)?;
++    let mut stream = UnixStream::connect(&c.socket)
++        .map_err(|e| anyhow!("cannot connect to gate socket: {}", e.kind()))?;
++    stream.set_read_timeout(Some(Duration::from_secs(60)))?;
++    stream.set_write_timeout(Some(Duration::from_secs(30)))?;
++    write_request(&mut stream, &c.approval_id, &bytes)?;
++    let (ok, code, message, artifact) = read_response(&mut stream)?;
++    if !ok {
++        return Err(anyhow!("{code}: {message}"));
++    }
++    match &c.output {
++        Some(path) => {
++            write_output_file(path, &artifact)?;
++            println!("{code} approval={} {message}", c.approval_id);
++        }
++        None => {
++            let mut stdout = io::stdout();
++            stdout.write_all(&artifact)?;
++            stdout.flush()?;
++            eprintln!("{code} approval={} {message}", c.approval_id);
++        }
++    }
++    Ok(())
++}
++
++fn write_request<W: Write>(w: &mut W, id: &str, pczt: &[u8]) -> io::Result<()> {
++    if id.len() > MAX_ID_BYTES || pczt.len() > MAX_PCZT_BYTES {
++        return Err(io::Error::new(io::ErrorKind::InvalidInput, "request too large"));
++    }
++    w.write_all(&REQ_MAGIC)?;
++    w.write_all(&[IPV_VERSION])?;
++    w.write_all(&(id.len() as u16).to_le_bytes())?;
++    w.write_all(id.as_bytes())?;
++    w.write_all(&(pczt.len() as u32).to_le_bytes())?;
++    w.write_all(pczt)?;
++    w.flush()
++}
++
++fn read_request<R: Read>(r: &mut R) -> Result<(String, Vec<u8>), anyhow::Error> {
++    let mut magic = [0u8; 4];
++    r.read_exact(&mut magic)?;
++    if magic != REQ_MAGIC {
++        anyhow::bail!("bad magic");
++    }
++    let mut version = [0u8; 1];
++    r.read_exact(&mut version)?;
++    if version[0] != IPV_VERSION {
++        anyhow::bail!("unsupported protocol version");
++    }
++    let id_len = read_u16(r)? as usize;
++    if id_len == 0 || id_len > MAX_ID_BYTES {
++        anyhow::bail!("bad approval id length");
++    }
++    let mut id = vec![0u8; id_len];
++    r.read_exact(&mut id)?;
++    let id = String::from_utf8(id).map_err(|_| anyhow!("approval id is not UTF-8"))?;
++    let pczt_len = read_u32(r)? as usize;
++    if pczt_len == 0 || pczt_len > MAX_PCZT_BYTES {
++        anyhow::bail!("bad proposal length");
++    }
++    let mut pczt = vec![0u8; pczt_len];
++    r.read_exact(&mut pczt)?;
++    Ok((id, pczt))
++}
++
++fn write_response<W: Write>(
++    w: &mut W,
++    ok: bool,
++    code: &str,
++    message: &str,
++    artifact: &[u8],
++) -> io::Result<()> {
++    if code.len() > MAX_MESSAGE_BYTES || message.len() > MAX_MESSAGE_BYTES {
++        return Err(io::Error::new(io::ErrorKind::InvalidInput, "response too large"));
++    }
++    w.write_all(&RESP_MAGIC)?;
++    w.write_all(&[IPV_VERSION])?;
++    w.write_all(&[u8::from(ok)])?;
++    w.write_all(&(code.len() as u16).to_le_bytes())?;
++    w.write_all(code.as_bytes())?;
++    w.write_all(&(message.len() as u16).to_le_bytes())?;
++    w.write_all(message.as_bytes())?;
++    w.write_all(&(artifact.len() as u32).to_le_bytes())?;
++    w.write_all(artifact)?;
++    w.flush()
++}
++
++fn read_response<R: Read>(r: &mut R) -> Result<(bool, String, String, Vec<u8>), anyhow::Error> {
++    let mut magic = [0u8; 4];
++    r.read_exact(&mut magic)?;
++    if magic != RESP_MAGIC {
++        anyhow::bail!("bad response magic");
++    }
++    let mut version = [0u8; 1];
++    r.read_exact(&mut version)?;
++    if version[0] != IPV_VERSION {
++        anyhow::bail!("unsupported protocol version");
++    }
++    let mut status = [0u8; 1];
++    r.read_exact(&mut status)?;
++    let code = read_string(r)?;
++    let message = read_string(r)?;
++    let len = read_u32(r)? as usize;
++    if len > MAX_PCZT_BYTES {
++        anyhow::bail!("response artifact too large");
++    }
++    let mut artifact = vec![0u8; len];
++    r.read_exact(&mut artifact)?;
++    Ok((status[0] != 0, code, message, artifact))
++}
++
++fn read_u16<R: Read>(r: &mut R) -> io::Result<u16> {
++    let mut b = [0u8; 2];
++    r.read_exact(&mut b)?;
++    Ok(u16::from_le_bytes(b))
++}
++
++fn read_u32<R: Read>(r: &mut R) -> io::Result<u32> {
++    let mut b = [0u8; 4];
++    r.read_exact(&mut b)?;
++    Ok(u32::from_le_bytes(b))
++}
++
++fn read_string<R: Read>(r: &mut R) -> Result<String, anyhow::Error> {
++    let len = read_u16(r)? as usize;
++    if len > MAX_MESSAGE_BYTES {
++        anyhow::bail!("string too large");
++    }
++    let mut b = vec![0u8; len];
++    r.read_exact(&mut b)?;
++    String::from_utf8(b).map_err(|_| anyhow!("string is not UTF-8"))
++}
++
++fn sha256_hex(bytes: &[u8]) -> String {
++    use sha2::{Digest, Sha256};
++    let mut h = Sha256::new();
++    h.update(bytes);
++    hex::encode(h.finalize())
++}
++
++fn gate_err(reason: &'static str, stage: Stage, detail: impl Into<String>) -> anyhow::Error {
++    anyhow::Error::new(GateError::new(reason, stage, detail))
++}
++
++/// Test-only injected crash points, gated behind the fixtures flag. Aborting
++/// releases the advisory lock and leaves whatever state was already fsynced.
++fn crash_point(name: &str) {
++    if fixtures_enabled() && std::env::var("AIRLOCK_GATE_TEST_CRASH_AFTER").as_deref() == Ok(name) {
++        eprintln!("CRASH_INJECT point={name}");
++        std::process::abort();
++    }
++}
++
++/// Best-effort chain tip via `wallet balance --json` (local wallet DB, no
++/// server connection required). Callers must treat `None` as fatal.
++pub(crate) fn tip_via_devtool(wallet: &Path) -> Option<u32> {
++    let exe = std::env::current_exe().ok()?;
++    let out = Proc::new(exe)
++        .args(["wallet", "-w", wallet.to_str()?, "balance", "--json"])
++        .output()
++        .ok()?;
++    let s = String::from_utf8_lossy(&out.stdout);
++    for line in s.lines() {
++        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
++            if let Some(h) = v.get("chain_tip_height").and_then(|x| x.as_u64()) {
++                return Some(h as u32);
++            }
++        }
++        if let Some(pos) = line.find("chain_tip_height") {
++            let rest = &line[pos + "chain_tip_height".len()..];
++            let rest = rest.trim_start_matches(|c: char| c == ':' || c == ' ' || c == '"');
++            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
++            if let Ok(h) = digits.parse::<u32>() {
++                return Some(h);
++            }
++        }
++    }
++    None
++}
+diff --git a/src/commands/airlock_gate/validate.rs b/src/commands/airlock_gate/validate.rs
+new file mode 100644
+index 0000000..6a6c738
+--- /dev/null
++++ b/src/commands/airlock_gate/validate.rs
+@@ -0,0 +1,711 @@
++//! PCZT validation and the protected sign path.
++//!
++//! Validation operates on the same in-memory `Pczt` object that is subsequently
++//! signed; the proposal file is never re-opened after the initial read.
++
++use anyhow::anyhow;
++use orchard::{
++    keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
++    pczt::VerifyError,
++};
++use pczt::{
++    Pczt,
++    roles::{
++        signer::Signer,
++        verifier::{OrchardError, Verifier},
++    },
++};
++use rand::{rand_core::UnwrapErr, rngs::SysRng};
++use secrecy::ExposeSecret;
++use zcash_address::ZcashAddress;
++use zcash_keys::address::Address;
++use zcash_keys::keys::UnifiedSpendingKey;
++use zcash_protocol::consensus::{NetworkConstants, Parameters};
++use zip32::{AccountId, fingerprint::SeedFingerprint};
++
++use super::approval::{Approval, MemoPolicy, now_unix};
++
++/// Nu7 consensus branch id (ZIP-259).
++pub const NU7_BRANCH_ID: u32 = 0x7719_0ad9;
++pub const TESTNET_COIN_TYPE: u32 = 1;
++pub const V6_TX_VERSION: u32 = 6;
++
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum Stage {
++    Parse,
++    Scope,
++    Crypto,
++    Policy,
++    Authorization,
++    Expiry,
++    Signing,
++    NoSpend,
++}
++
++impl Stage {
++    pub fn as_str(&self) -> &'static str {
++        match self {
++            Stage::Parse => "parse",
++            Stage::Scope => "scope",
++            Stage::Crypto => "crypto",
++            Stage::Policy => "policy",
++            Stage::Authorization => "authorization",
++            Stage::Expiry => "expiry",
++            Stage::Signing => "signing",
++            Stage::NoSpend => "no_signable_spend",
++        }
++    }
++}
++
++#[derive(Debug)]
++pub struct GateError {
++    pub reason: &'static str,
++    pub stage: Stage,
++    pub detail: String,
++}
++
++impl GateError {
++    pub fn new(reason: &'static str, stage: Stage, detail: impl Into<String>) -> Self {
++        Self {
++            reason,
++            stage,
++            detail: detail.into(),
++        }
++    }
++}
++
++impl std::fmt::Display for GateError {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        write!(
++            f,
++            "{} [{}]: {}",
++            self.reason,
++            self.stage.as_str(),
++            self.detail
++        )
++    }
++}
++
++impl std::error::Error for GateError {}
++
++pub struct GateKeys {
++    pub seed: secrecy::SecretVec<u8>,
++    pub seed_fp: SeedFingerprint,
++    pub usk: UnifiedSpendingKey,
++    pub fvk: FullViewingKey,
++    pub ivk_external: PreparedIncomingViewingKey,
++    pub ivk_internal: PreparedIncomingViewingKey,
++}
++
++pub struct ValidatedTx {
++    pub signable_spends: Vec<usize>,
++    pub fee_zatoshis: u64,
++    pub payment_index: Option<usize>,
++    pub change_indices: Vec<usize>,
++    pub expiry_height: u32,
++}
++
++fn crypto_err(e: VerifyError) -> GateError {
++    GateError::new("E_CRYPTO_VERIFY", Stage::Crypto, format!("{e:?}"))
++}
++
++fn orchard_err(e: OrchardError<GateError>) -> GateError {
++    match e {
++        OrchardError::Custom(g) => g,
++        OrchardError::Parse(p) => GateError::new("E_PARSE", Stage::Parse, format!("{p:?}")),
++        OrchardError::UnsupportedConsensusBranchId => GateError::new(
++            "E_UNSUPPORTED_NETWORK_CONTEXT",
++            Stage::Scope,
++            "unsupported consensus branch for ironwood parse",
++        ),
++        OrchardError::Verify(v) => crypto_err(v),
++    }
++}
++
++/// Decode approval recipient UA to an orchard/Ironwood address.
++pub fn ua_orchard_address(
++    ua: &str,
++    params: &impl Parameters,
++) -> Result<orchard::Address, GateError> {
++    let addr = ZcashAddress::try_from_encoded(ua)
++        .map_err(|e| GateError::new("E_POLICY_RECIPIENT", Stage::Policy, format!("bad UA: {e}")))?;
++    let unified: Address = addr
++        .convert_if_network::<Address>(params.network_type())
++        .map_err(|e| {
++            GateError::new(
++                "E_POLICY_NETWORK",
++                Stage::Policy,
++                format!("UA network mismatch: {e}"),
++            )
++        })?;
++    match unified {
++        Address::Unified(ua) => ua.orchard().copied().ok_or_else(|| {
++            GateError::new(
++                "E_POLICY_RECIPIENT",
++                Stage::Policy,
++                "UA has no orchard/ironwood receiver",
++            )
++        }),
++        _ => Err(GateError::new(
++            "E_POLICY_RECIPIENT",
++            Stage::Policy,
++            "address is not a unified address",
++        )),
++    }
++}
++
++/// Validate a parsed PCZT against an approval and wallet keys. Does not sign.
++pub fn validate(
++    pczt: &Pczt,
++    approval: &Approval,
++    keys: &GateKeys,
++    params: &impl Parameters,
++    chain_tip: u32,
++) -> Result<ValidatedTx, GateError> {
++    // --- Authorization: approval terms ---
++    if approval.network != "test" {
++        return Err(GateError::new(
++            "E_AUTH_NETWORK",
++            Stage::Authorization,
++            "approval network must be test",
++        ));
++    }
++    if now_unix() > approval.expires_at_unix {
++        return Err(GateError::new(
++            "E_AUTH_EXPIRED",
++            Stage::Authorization,
++            "approval expired",
++        ));
++    }
++
++    // --- Scope ---
++    let global = pczt.global();
++    if *global.tx_version() != V6_TX_VERSION {
++        return Err(GateError::new(
++            "E_UNSUPPORTED_VERSION",
++            Stage::Scope,
++            format!("tx_version={} (want V6)", global.tx_version()),
++        ));
++    }
++    if *global.consensus_branch_id() != NU7_BRANCH_ID {
++        return Err(GateError::new(
++            "E_UNSUPPORTED_NETWORK_CONTEXT",
++            Stage::Scope,
++            format!(
++                "consensus_branch_id={:#x} (want Nu7)",
++                global.consensus_branch_id()
++            ),
++        ));
++    }
++    if *global.coin_type() != TESTNET_COIN_TYPE {
++        return Err(GateError::new(
++            "E_UNSUPPORTED_NETWORK_CONTEXT",
++            Stage::Scope,
++            format!(
++                "coin_type={} (want testnet {TESTNET_COIN_TYPE})",
++                global.coin_type()
++            ),
++        ));
++    }
++    if !pczt.transparent().inputs().is_empty() || !pczt.transparent().outputs().is_empty() {
++        return Err(GateError::new(
++            "E_UNSUPPORTED_POOL",
++            Stage::Scope,
++            "transparent component present",
++        ));
++    }
++    if !pczt.sapling().spends().is_empty() || !pczt.sapling().outputs().is_empty() {
++        return Err(GateError::new(
++            "E_UNSUPPORTED_POOL",
++            Stage::Scope,
++            "sapling component present",
++        ));
++    }
++    if !pczt.orchard().actions().is_empty() {
++        return Err(GateError::new(
++            "E_UNSUPPORTED_POOL",
++            Stage::Scope,
++            "orchard (non-Ironwood) component present",
++        ));
++    }
++
++    let expiry = *global.expiry_height();
++    if expiry == 0 {
++        return Err(GateError::new(
++            "E_EXPIRY",
++            Stage::Expiry,
++            "expiry_height is zero",
++        ));
++    }
++    if expiry <= chain_tip {
++        return Err(GateError::new(
++            "E_EXPIRY",
++            Stage::Expiry,
++            format!("expiry_height={expiry} <= tip={chain_tip}"),
++        ));
++    }
++    // NU7 expiry window is ~20 blocks; reject implausible far-future expiries.
++    if expiry > chain_tip.saturating_add(10_000) {
++        return Err(GateError::new(
++            "E_EXPIRY",
++            Stage::Expiry,
++            format!("expiry_height={expiry} implausibly far from tip={chain_tip}"),
++        ));
++    }
++
++    let expected_recipient = ua_orchard_address(&approval.recipient_ua, params)?;
++    if pczt.ironwood().actions().is_empty() {
++        return Err(GateError::new(
++            "E_NO_SIGNABLE_SPEND",
++            Stage::NoSpend,
++            "empty Ironwood bundle",
++        ));
++    }
++
++    // --- Crypto + policy over the parsed (orchard-typed) bundle ---
++    let mut signable_spends = Vec::new();
++    let mut spend_sum: u64 = 0;
++    let mut output_sum: u64 = 0;
++    let mut payment_index: Option<usize> = None;
++    let mut change_indices: Vec<usize> = Vec::new();
++    let seed_fp = keys.seed_fp;
++    let coin_hardened = zip32::ChildIndex::hardened(params.network_type().coin_type());
++    // Shielded sighash, needed to verify pre-existing padding signatures.
++    let sighash = {
++        let probe = Signer::new(pczt.clone())
++            .map_err(|e| GateError::new("E_SIGN_INIT", Stage::Signing, format!("{e:?}")))?;
++        probe.shielded_sighash()
++    };
++
++    let _verified_pczt = Verifier::new(pczt.clone())
++        .with_ironwood::<GateError, _>(|bundle| {
++            bundle.verify_cross_address_restriction()?;
++
++            for (index, action) in bundle.actions().iter().enumerate() {
++                let spend = action.spend();
++                let output = action.output();
++
++                // Field-doc MUST: signers reject dummy_sk.
++                if spend.dummy_sk().is_some() {
++                    return Err(OrchardError::Custom(GateError::new(
++                        "E_POLICY_DUMMY_SK",
++                        Stage::Policy,
++                        format!("action {index} contains dummy_sk"),
++                    )));
++                }
++
++                // Ownership classification, using the same rule as upstream
++                // `pczt sign`: a spend is ours only if its ZIP 32 derivation
++                // matches our seed fingerprint and coin type. Non-matching
++                // spends must be zero-value padding pre-signed at build time;
++                // their signatures are verified below and never replaced.
++                let ours = spend
++                    .zip32_derivation()
++                    .as_ref()
++                    .and_then(|d| d.extract_account_index(&seed_fp, coin_hardened))
++                    .is_some();
++                if ours && spend.fvk().as_ref() != Some(&keys.fvk) {
++                    return Err(OrchardError::Custom(GateError::new(
++                        "E_KEY_MISMATCH",
++                        Stage::Crypto,
++                        format!("action {index} zip32 marks ours but PCZT fvk differs"),
++                    )));
++                }
++                if std::env::var("AIRLOCK_GATE_DEBUG").is_ok() {
++                    eprintln!(
++                        "DEBUG action {index}: ours={ours} fvk_set={}",
++                        spend.fvk().is_some()
++                    );
++                }
++
++                action.verify_cv_net()?;
++                spend.verify_nullifier(if ours { Some(&keys.fvk) } else { None })?;
++                spend.verify_rk(if ours { Some(&keys.fvk) } else { None })?;
++                output.verify_note_commitment(spend)?;
++
++                let spend_val = spend
++                    .value()
++                    .as_ref()
++                    .ok_or_else(|| {
++                        OrchardError::Custom(GateError::new(
++                            "E_MISSING_DATA",
++                            Stage::Crypto,
++                            format!("action {index} spend value missing"),
++                        ))
++                    })?
++                    .inner();
++                let output_val = output
++                    .value()
++                    .as_ref()
++                    .ok_or_else(|| {
++                        OrchardError::Custom(GateError::new(
++                            "E_MISSING_DATA",
++                            Stage::Crypto,
++                            format!("action {index} output value missing"),
++                        ))
++                    })?
++                    .inner();
++                spend_sum = spend_sum.checked_add(spend_val).ok_or_else(|| {
++                    OrchardError::Custom(GateError::new(
++                        "E_FEE_OVERFLOW",
++                        Stage::Crypto,
++                        "spend value overflow",
++                    ))
++                })?;
++                output_sum = output_sum.checked_add(output_val).ok_or_else(|| {
++                    OrchardError::Custom(GateError::new(
++                        "E_FEE_OVERFLOW",
++                        Stage::Crypto,
++                        "output value overflow",
++                    ))
++                })?;
++
++                if ours {
++                    signable_spends.push(index);
++                } else {
++                    // Not ours: only zero-value padding with a valid
++                    // pre-existing spend-auth signature is acceptable.
++                    if spend_val != 0 {
++                        return Err(OrchardError::Custom(GateError::new(
++                            "E_FOREIGN_SPEND",
++                            Stage::NoSpend,
++                            format!("action {index} is a nonzero spend not owned by the gate wallet"),
++                        )));
++                    }
++                    let sig = spend.spend_auth_sig().as_ref().ok_or_else(|| {
++                        OrchardError::Custom(GateError::new(
++                            "E_FOREIGN_SPEND",
++                            Stage::NoSpend,
++                            format!("action {index} is an unsigned foreign spend"),
++                        ))
++                    })?;
++                    spend.rk().verify(&sighash, sig).map_err(|e| {
++                        OrchardError::Custom(GateError::new(
++                            "E_PRE_SIGNED_INVALID",
++                            Stage::Crypto,
++                            format!("action {index} pre-signed padding signature invalid: {e:?}"),
++                        ))
++                    })?;
++                }
++
++                if output_val == 0 {
++                    return Err(OrchardError::Custom(GateError::new(
++                        "E_POLICY_ZERO_OUTPUT",
++                        Stage::Policy,
++                        format!("action {index} has a zero-value output"),
++                    )));
++                }
++
++                let out_addr = output.recipient().as_ref().cloned().ok_or_else(|| {
++                    OrchardError::Custom(GateError::new(
++                        "E_MISSING_DATA",
++                        Stage::Crypto,
++                        format!("action {index} output recipient missing"),
++                    ))
++                })?;
++
++                // Determine if this output is our change (decryptable with our IVK)
++                // before requiring OVK recovery: change outputs use internal_ovk=None
++                // under OvkPolicy::Sender, so OVK recovery legitimately fails for them.
++                // Change is sent to address_at(0, Scope::Internal), so try both scopes.
++                let ivk_result = action
++                    .decrypt_output_with_ivk(&keys.ivk_external, *bundle.bundle_version())
++                    .or_else(|e| {
++                        if std::env::var("AIRLOCK_GATE_DEBUG").is_ok() {
++                            eprintln!("DEBUG action {index}: ivk_external err: {e:?}");
++                        }
++                        Err(e)
++                    })
++                    .and_then(|r| {
++                        if r.is_some() {
++                            Ok(r)
++                        } else {
++                            // Try internal scope (change uses Scope::Internal address).
++                            action.decrypt_output_with_ivk(&keys.ivk_internal, *bundle.bundle_version())
++                        }
++                    });
++                if std::env::var("AIRLOCK_GATE_DEBUG").is_ok() {
++                    eprintln!(
++                        "DEBUG action {index}: ivk_result={:?} out_addr={:?}",
++                        ivk_result.as_ref().map(|r| r.is_some()),
++                        out_addr
++                    );
++                }
++                let is_ours = match &ivk_result {
++                    Ok(Some(_)) => true,
++                    Ok(None) => false,
++                    Err(e) => {
++                        return Err(OrchardError::Custom(GateError::new(
++                            "E_MISSING_DATA",
++                            Stage::Crypto,
++                            format!("action {index} ivk decrypt: {e:?}"),
++                        )));
++                    }
++                };
++
++                let (_note, _rec_addr, memo_bytes) = if is_ours {
++                    // Change output: IVK-decryptable; OVK recovery is not
++                    // required (internal_ovk is None under OvkPolicy::Sender).
++                    let decrypted = ivk_result
++                        .map_err(|e| {
++                            OrchardError::Custom(GateError::new(
++                                "E_MISSING_DATA",
++                                Stage::Crypto,
++                                format!("action {index} ivk decrypt: {e:?}"),
++                            ))
++                        })?
++                        .expect("is_ours implies Some");
++                    (decrypted.0, out_addr, decrypted.2)
++                } else {
++                    // External payment: require sender-side OVK recovery so the
++                    // memo bytes and recipient are bound to the ciphertext.
++                    let recovered = action
++                        .recover_output_with_ovk(
++                            &keys.fvk.to_ovk(Scope::External),
++                            *bundle.bundle_version(),
++                        )
++                        .map_err(|e| {
++                            OrchardError::Custom(GateError::new(
++                                "E_MISSING_DATA",
++                                Stage::Crypto,
++                                format!("action {index} ovk recovery: {e:?}"),
++                            ))
++                        })?
++                        .ok_or_else(|| {
++                            OrchardError::Custom(GateError::new(
++                                "E_CRYPTO_OVK_RECOVERY",
++                                Stage::Crypto,
++                                format!("action {index} not recoverable with our OVK"),
++                            ))
++                        })?;
++                    let (note, rec_addr, memo_bytes) = recovered;
++                    if rec_addr != out_addr {
++                        return Err(OrchardError::Custom(GateError::new(
++                            "E_CRYPTO_RECIPIENT_MISMATCH",
++                            Stage::Crypto,
++                            format!("action {index} recovered recipient != declared"),
++                        )));
++                    }
++                    (note, rec_addr, memo_bytes)
++                };
++
++                if is_ours {
++                    change_indices.push(index);
++                    if std::env::var("AIRLOCK_GATE_DEBUG").is_ok() {
++                        eprintln!(
++                            "DEBUG action {index}: change memo first 16 bytes={:02x?}",
++                            &memo_bytes[..16]
++                        );
++                    }
++                    if !memo_is_empty(&memo_bytes) {
++                        return Err(OrchardError::Custom(GateError::new(
++                            "E_POLICY_MEMO",
++                            Stage::Policy,
++                            format!("action {index} change output memo not empty"),
++                        )));
++                    }
++                } else {
++                    if payment_index.is_some() {
++                        return Err(OrchardError::Custom(GateError::new(
++                            "E_POLICY_EXTRA_OUTPUT",
++                            Stage::Policy,
++                            format!("action {index} is an extra non-change output"),
++                        )));
++                    }
++                    if out_addr != expected_recipient {
++                        return Err(OrchardError::Custom(GateError::new(
++                            "E_POLICY_RECIPIENT",
++                            Stage::Policy,
++                            format!("action {index} recipient does not match approval"),
++                        )));
++                    }
++                    if output_val != approval.amount_zatoshis {
++                        return Err(OrchardError::Custom(GateError::new(
++                            "E_POLICY_AMOUNT",
++                            Stage::Policy,
++                            format!(
++                                "action {index} amount {output_val} != approved {}",
++                                approval.amount_zatoshis
++                            ),
++                        )));
++                    }
++                    match &approval.memo_policy {
++                        MemoPolicy::Exact(_) | MemoPolicy::Empty => {
++                            // Exact comparison against the canonical 512-byte
++                            // ZIP 302 encoding. No NUL truncation, no prefix
++                            // stripping, no "looks like text" heuristics.
++                            let expected = approval
++                                .canonical_memo()
++                                .map_err(OrchardError::Custom)?;
++                            if memo_bytes != expected {
++                                return Err(OrchardError::Custom(GateError::new(
++                                    "E_POLICY_MEMO",
++                                    Stage::Policy,
++                                    format!(
++                                        "action {index} memo bytes != approved memo bytes"
++                                    ),
++                                )));
++                            }
++                        }
++                    }
++                    payment_index = Some(index);
++                }
++            }
++            Ok(())
++        })
++        .map_err(orchard_err)?;
++
++    if payment_index.is_none() {
++        return Err(GateError::new(
++            "E_POLICY_NO_PAYMENT",
++            Stage::Policy,
++            "no output matches the approved payment",
++        ));
++    }
++
++    let fee = spend_sum.checked_sub(output_sum).ok_or_else(|| {
++        GateError::new("E_FEE_UNDERFLOW", Stage::Crypto, "outputs exceed spends")
++    })?;
++    if fee > approval.max_fee_zatoshis {
++        return Err(GateError::new(
++            "E_POLICY_FEE",
++            Stage::Policy,
++            format!("fee {fee} > max_fee {}", approval.max_fee_zatoshis),
++        ));
++    }
++    if signable_spends.is_empty() {
++        return Err(GateError::new(
++            "E_NO_SIGNABLE_SPEND",
++            Stage::NoSpend,
++            "no spends match wallet keys",
++        ));
++    }
++
++    Ok(ValidatedTx {
++        signable_spends,
++        fee_zatoshis: fee,
++        payment_index,
++        change_indices,
++        expiry_height: expiry,
++    })
++}
++
++fn memo_is_empty(memo: &[u8; 512]) -> bool {
++    // Change outputs only: all-zero, 0xff + zeros (PCZT placeholder), or
++    // 0xf6 + zeros (ZIP 203 empty-binary memo produced by MemoBytes::empty()).
++    memo.iter().all(|&b| b == 0)
++        || (memo[0] == 0xff && memo[1..].iter().all(|&b| b == 0))
++        || (memo[0] == 0xf6 && memo[1..].iter().all(|&b| b == 0))
++}
++
++/// Sign the validated (ours-only) spends on the same in-memory PCZT, then
++/// verify every signature — ours and pre-signed padding — before returning.
++pub fn sign_validated(
++    pczt: Pczt,
++    keys: &GateKeys,
++    validated: &ValidatedTx,
++) -> Result<(Pczt, Vec<usize>), GateError> {
++    let sighash = {
++        let probe = Signer::new(pczt.clone())
++            .map_err(|e| GateError::new("E_SIGN_INIT", Stage::Signing, format!("{e:?}")))?;
++        probe.shielded_sighash()
++    };
++
++    if std::env::var("AIRLOCK_GATE_DEBUG").is_ok() {
++        let ask = orchard::keys::SpendAuthorizingKey::from(keys.usk.orchard());
++        let ak_from_ask = orchard::keys::SpendValidatingKey::from(&ask);
++        let ak_from_fvk = orchard::keys::SpendValidatingKey::from(keys.fvk.clone());
++        eprintln!(
++            "DEBUG sign: ak_from_ask={:?} ak_from_fvk={:?} match={}",
++            ak_from_ask, ak_from_fvk, ak_from_ask == ak_from_fvk
++        );
++        // Debug access to pczt internals skipped (private field); ak match
++        // debug above confirms key consistency.
++    }
++
++    let mut signer = Signer::new(pczt)
++        .map_err(|e| GateError::new("E_SIGN_INIT", Stage::Signing, format!("{e:?}")))?;
++    let ask = orchard::keys::SpendAuthorizingKey::from(keys.usk.orchard());
++    for &index in &validated.signable_spends {
++        signer
++            .sign_ironwood(UnwrapErr(SysRng), index, &ask)
++            .map_err(|e| {
++                GateError::new("E_SIGN_FAILED", Stage::Signing, format!("spend {index}: {e:?}"))
++            })?;
++    }
++    let signed = signer.finish();
++
++    // Cryptographically verify every produced signature by re-parsing the
++    // signed bundle and checking redpallas against the shielded sighash.
++    let mut verified = Vec::new();
++    let _ = Verifier::new(signed.clone())
++        .with_ironwood::<GateError, _>(|bundle| {
++            // Every action must carry a valid spend-auth signature: the ones
++            // we just produced plus any pre-signed padding we preserved.
++            for index in 0..bundle.actions().len() {
++                let action = bundle.actions().get(index).ok_or_else(|| {
++                    OrchardError::Custom(GateError::new(
++                        "E_NO_SIGNABLE_SPEND",
++                        Stage::NoSpend,
++                        "action missing after sign",
++                    ))
++                })?;
++                let spend = action.spend();
++                let sig = spend.spend_auth_sig().as_ref().ok_or_else(|| {
++                    OrchardError::Custom(GateError::new(
++                        "E_NO_SIGNATURE",
++                        Stage::Signing,
++                        format!("no spend_auth_sig on action {index}"),
++                    ))
++                })?;
++                spend.rk().verify(&sighash, sig).map_err(|e| {
++                    OrchardError::Custom(GateError::new(
++                        "E_SIGNATURE_VERIFY",
++                        Stage::Signing,
++                        format!("action {index}: {e:?}"),
++                    ))
++                })?;
++                verified.push(index);
++            }
++            Ok(())
++        })
++        .map_err(orchard_err)?;
++
++    if verified.len() < validated.signable_spends.len() {
++        return Err(GateError::new(
++            "E_NO_SIGNABLE_SPEND",
++            Stage::NoSpend,
++            "signing produced no signatures",
++        ));
++    }
++    Ok((signed, verified))
++}
++
++/// Load wallet keys the same way the devtool sign path does.
++pub fn load_keys(
++    wallet_dir: &std::path::Path,
++    identity_path: &std::path::Path,
++    params: &impl Parameters,
++) -> Result<GateKeys, anyhow::Error> {
++    let identities =
++        age::IdentityFile::from_file(identity_path.to_string_lossy().into_owned())?.into_identities()?;
++    let mut config = crate::config::WalletConfig::read(Some(wallet_dir))?;
++    let seed = config
++        .decrypt_seed(identities.iter().map(|i| i.as_ref() as _))?
++        .ok_or_else(|| anyhow!("Seed must be present to enable signing"))?;
++    let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
++        .ok_or_else(|| anyhow!("Invalid seed length"))?;
++    let usk = UnifiedSpendingKey::from_seed(params, seed.expose_secret(), AccountId::ZERO)?;
++    let sk: &SpendingKey = usk.orchard();
++    let fvk = FullViewingKey::from(sk);
++    let ivk_external = fvk.to_ivk(Scope::External).prepare();
++    let ivk_internal = fvk.to_ivk(Scope::Internal).prepare();
++    Ok(GateKeys {
++        seed,
++        seed_fp,
++        usk,
++        fvk,
++        ivk_external,
++        ivk_internal,
++    })
++}
+diff --git a/src/commands/pczt/create.rs b/src/commands/pczt/create.rs
+index 2679a32..f380822 100644
+--- a/src/commands/pczt/create.rs
++++ b/src/commands/pczt/create.rs
+@@ -48,9 +48,26 @@ pub(crate) struct Command {
+     value: u64,
+ 
+     /// A memo to send to the recipient
+-    #[arg(long)]
++    #[arg(long, conflicts_with = "memo_hex")]
+     memo: Option<String>,
+ 
++    /// Test support: raw memo bytes as hex (padded to 512 bytes as provided).
++    /// Used to exercise exact-memo validation; takes precedence over --memo.
++    #[arg(long)]
++    memo_hex: Option<String>,
++
++    /// Optional second recipient (test support for multi-output proposals).
++    #[arg(long, requires = "value2")]
++    address2: Option<String>,
++
++    /// Amount in zatoshis for the optional second recipient.
++    #[arg(long, requires = "address2")]
++    value2: Option<u64>,
++
++    /// A memo for the optional second recipient.
++    #[arg(long)]
++    memo2: Option<String>,
++
+     /// Note management: the number of notes to maintain in the wallet
+     #[arg(long)]
+     #[arg(default_value_t = 4)]
+@@ -89,22 +106,45 @@ impl Command {
+         );
+         let input_selector = GreedyInputSelector::new();
+ 
+-        let request = TransactionRequest::new(vec![
++        let first_memo = match (&self.memo_hex, &self.memo) {
++            (Some(hex_memo), _) => {
++                let raw = hex::decode(hex_memo).map_err(|_| error::Error::InvalidMemo)?;
++                Some(MemoBytes::from_bytes(&raw).map_err(|_| error::Error::InvalidMemo)?)
++            }
++            (None, Some(text)) => Some(MemoBytes::from(Memo::from_str(text)?)),
++            (None, None) => None,
++        };
++
++        let mut payments = vec![
+             Payment::new(
+                 ZcashAddress::from_str(&self.address)
+                     .map_err(|_| error::Error::InvalidRecipient)?,
+                 Some(Zatoshis::from_u64(self.value).map_err(|_| error::Error::InvalidAmount)?),
+-                self.memo
+-                    .map(|memo| Memo::from_str(&memo))
+-                    .transpose()?
+-                    .map(MemoBytes::from),
++                first_memo,
+                 None,
+                 None,
+                 vec![],
+             )
+             .map_err(|e| e.with_index(0))?,
+-        ])
+-        .map_err(error::Error::from)?;
++        ];
++        if let (Some(address2), Some(value2)) = (self.address2, self.value2) {
++            payments.push(
++                Payment::new(
++                    ZcashAddress::from_str(&address2)
++                        .map_err(|_| error::Error::InvalidRecipient)?,
++                    Some(Zatoshis::from_u64(value2).map_err(|_| error::Error::InvalidAmount)?),
++                    self.memo2
++                        .map(|memo| Memo::from_str(&memo))
++                        .transpose()?
++                        .map(MemoBytes::from),
++                    None,
++                    None,
++                    vec![],
++                )
++                .map_err(|e| e.with_index(1))?,
++            );
++        }
++        let request = TransactionRequest::new(payments).map_err(error::Error::from)?;
+ 
+         let proposal = propose_transfer(
+             &mut db_data,
+diff --git a/src/commands/pczt/sign.rs b/src/commands/pczt/sign.rs
+index 49c13f9..0ca5161 100644
+--- a/src/commands/pczt/sign.rs
++++ b/src/commands/pczt/sign.rs
+@@ -1,29 +1,10 @@
+-use std::{collections::BTreeMap, convert::Infallible, path::PathBuf};
++use std::path::PathBuf;
+ 
+ use anyhow::anyhow;
+ use clap::Args;
+-use pczt::{
+-    Pczt,
+-    roles::{signer::Signer, verifier::Verifier},
+-};
+-use rand::{rand_core::UnwrapErr, rngs::SysRng};
+-use secrecy::ExposeSecret;
+-use tokio::{
+-    fs::File,
+-    io::{AsyncReadExt, AsyncWriteExt, stdin, stdout},
+-};
+ 
+-use ::transparent::{
+-    keys::{NonHardenedChildIndex, TransparentKeyScope},
+-    zip48,
+-};
+-use zcash_keys::keys::UnifiedSpendingKey;
+-use zcash_protocol::consensus::{NetworkConstants, Parameters};
+-use zip32::fingerprint::SeedFingerprint;
+-
+-use crate::config::WalletConfig;
+-
+-// Options accepted for the `pczt sign` command
++// Options accepted for the `pczt sign` command. The CLI shape is preserved so
++// callers fail with a clear, stable error instead of "unexpected argument".
+ #[derive(Debug, Args)]
+ pub(crate) struct Command {
+     /// age identity file to decrypt the mnemonic phrase with
+@@ -39,198 +20,15 @@ pub(crate) struct Command {
+ }
+ 
+ impl Command {
+-    pub(crate) async fn run(self, wallet_dir: Option<String>) -> Result<(), anyhow::Error> {
+-        let mut config = WalletConfig::read(wallet_dir.as_ref())?;
+-        let params = config.network();
+-
+-        let mut buf = vec![];
+-        if let Some(input_path) = &self.input {
+-            File::open(input_path).await?.read_to_end(&mut buf).await?;
+-        } else {
+-            stdin().read_to_end(&mut buf).await?;
+-        }
+-
+-        let pczt = Pczt::parse(&buf).map_err(|e| anyhow!("Failed to read PCZT: {:?}", e))?;
+-
+-        // Decrypt the mnemonic to access the seed.
+-        let identities = age::IdentityFile::from_file(self.identity)?.into_identities()?;
+-
+-        let seed = config
+-            .decrypt_seed(identities.iter().map(|i| i.as_ref() as _))?
+-            .ok_or(anyhow!("Seed must be present to enable signing"))?;
+-        let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
+-            .ok_or_else(|| anyhow!("Invalid seed length"))?;
+-
+-        // Find all the spends matching our seed.
+-        enum KeyRef {
+-            Orchard {
+-                index: usize,
+-            },
+-            Sapling {
+-                index: usize,
+-            },
+-            Transparent {
+-                index: usize,
+-                scope: TransparentKeyScope,
+-                address_index: NonHardenedChildIndex,
+-            },
+-            TransparentMultisig {
+-                index: usize,
+-                scope: zip32::Scope,
+-                address_index: NonHardenedChildIndex,
+-            },
+-        }
+-        let mut keys = BTreeMap::<zip32::AccountId, Vec<KeyRef>>::new();
+-        let pczt = Verifier::new(pczt)
+-            .with_orchard::<Infallible, _>(|bundle| {
+-                for (index, action) in bundle.actions().iter().enumerate() {
+-                    if let Some(account_index) = action
+-                        .spend()
+-                        .zip32_derivation()
+-                        .as_ref()
+-                        .and_then(|derivation| {
+-                            derivation.extract_account_index(
+-                                &seed_fp,
+-                                zip32::ChildIndex::hardened(params.network_type().coin_type()),
+-                            )
+-                        })
+-                    {
+-                        keys.entry(account_index)
+-                            .or_default()
+-                            .push(KeyRef::Orchard { index });
+-                    }
+-                }
+-                Ok(())
+-            })
+-            .map_err(|e| anyhow!("Invalid PCZT: {:?}", e))?
+-            .with_sapling::<Infallible, _>(|bundle| {
+-                for (index, spend) in bundle.spends().iter().enumerate() {
+-                    if let Some(account_index) =
+-                        spend.zip32_derivation().as_ref().and_then(|derivation| {
+-                            derivation.extract_account_index(
+-                                &seed_fp,
+-                                zip32::ChildIndex::hardened(params.network_type().coin_type()),
+-                            )
+-                        })
+-                    {
+-                        keys.entry(account_index)
+-                            .or_default()
+-                            .push(KeyRef::Sapling { index });
+-                    }
+-                }
+-                Ok(())
+-            })
+-            .map_err(|e| anyhow!("Invalid PCZT: {:?}", e))?
+-            .with_transparent::<Infallible, _>(|bundle| {
+-                let expected_coin_type = bip32::ChildNumber(
+-                    params.network_type().coin_type() | bip32::ChildNumber::HARDENED_FLAG,
+-                );
+-                for (index, input) in bundle.inputs().iter().enumerate() {
+-                    for derivation in input.bip32_derivation().values() {
+-                        if let Some((account_index, scope, address_index)) =
+-                            derivation.extract_bip_44_fields(&seed_fp, expected_coin_type)
+-                        {
+-                            keys.entry(account_index)
+-                                .or_default()
+-                                .push(KeyRef::Transparent {
+-                                    index,
+-                                    scope,
+-                                    address_index,
+-                                });
+-                        } else if let Some((account_index, scope, address_index)) =
+-                            derivation.extract_zip_48_fields(&seed_fp, expected_coin_type)
+-                        {
+-                            keys.entry(account_index).or_default().push(
+-                                KeyRef::TransparentMultisig {
+-                                    index,
+-                                    scope,
+-                                    address_index,
+-                                },
+-                            );
+-                        }
+-                    }
+-                }
+-                Ok(())
+-            })
+-            .map_err(|e| anyhow!("Invalid PCZT: {:?}", e))?
+-            .finish();
+-
+-        let mut signer =
+-            Signer::new(pczt).map_err(|e| anyhow!("Failed to initialize Signer: {:?}", e))?;
+-        for (account_index, spends) in keys {
+-            let usk = UnifiedSpendingKey::from_seed(&params, seed.expose_secret(), account_index)?;
+-            let msk =
+-                zip48::AccountPrivKey::from_seed(&params, seed.expose_secret(), account_index)
+-                    .map_err(|e| anyhow!("Failed to derive ZIP 48 account private key: {e:?}"))?;
+-            for keyref in spends {
+-                match keyref {
+-                    KeyRef::Orchard { index } => {
+-                        signer
+-                            .sign_orchard(
+-                                UnwrapErr(SysRng),
+-                                index,
+-                                &orchard::keys::SpendAuthorizingKey::from(usk.orchard()),
+-                            )
+-                            .map_err(|e| {
+-                                anyhow!("Failed to sign Orchard spend {index}: {:?}", e)
+-                            })?;
+-                    }
+-                    KeyRef::Sapling { index } => {
+-                        signer
+-                            .sign_sapling(UnwrapErr(SysRng), index, usk.sapling().expsk().ask())
+-                            .map_err(|e| {
+-                                anyhow!("Failed to sign Sapling spend {index}: {:?}", e)
+-                            })?;
+-                    }
+-                    KeyRef::Transparent {
+-                        index,
+-                        scope,
+-                        address_index,
+-                    } => signer
+-                        .sign_transparent(
+-                            index,
+-                            &usk.transparent()
+-                                .derive_secret_key(scope, address_index)
+-                                .map_err(|e| {
+-                                    anyhow!(
+-                                        "Failed to derive transparent key at .../{:?}/{:?}: {:?}",
+-                                        scope,
+-                                        address_index,
+-                                        e,
+-                                    )
+-                                })?,
+-                        )
+-                        .map_err(|e| {
+-                            anyhow!("Failed to sign transparent input {index}: {:?}", e)
+-                        })?,
+-                    KeyRef::TransparentMultisig {
+-                        index,
+-                        scope,
+-                        address_index,
+-                    } => signer
+-                        .sign_transparent(index, &msk.derive_signing_key(scope, address_index))
+-                        .map_err(|e| {
+-                            anyhow!("Failed to sign transparent input {index}: {:?}", e)
+-                        })?,
+-                }
+-            }
+-        }
+-
+-        let pczt = signer.finish();
+-
+-        let pczt_bytes = pczt
+-            .serialize()
+-            .map_err(|e| anyhow!("Failed to serialize PCZT: {:?}", e))?;
+-        if let Some(output_path) = &self.output {
+-            let mut file = File::create(output_path).await?;
+-            file.write_all(&pczt_bytes).await?;
+-            file.flush().await?;
+-        } else {
+-            let mut stdout = stdout();
+-            stdout.write_all(&pczt_bytes).await?;
+-            stdout.flush().await?;
+-        }
+-
+-        Ok(())
++    pub(crate) async fn run(self, _wallet_dir: Option<String>) -> Result<(), anyhow::Error> {
++        // AIRLOCK Stage 0B: the unrestricted signing endpoint has been removed.
++        // Spend-authorization signatures can only be produced through the
++        // protected gate, which validates the proposal against an independent,
++        // integrity-protected approval before signing.
++        let _ = (self.identity, self.input, self.output);
++        Err(anyhow!(
++            "E_SIGN_ENDPOINT_DISABLED: `pczt sign` is disabled in this build; \
++             use `airlock-gate sign --proposal <file> --approval-id <id> --output <file>`"
++        ))
+     }
+ }
+diff --git a/src/commands/wallet/sync.rs b/src/commands/wallet/sync.rs
+index c4bc0cb..cb55e44 100644
+--- a/src/commands/wallet/sync.rs
++++ b/src/commands/wallet/sync.rs
+@@ -56,7 +56,7 @@ use crate::tui::Tui;
+ #[cfg(feature = "tui")]
+ mod defrag;
+ 
+-const BATCH_SIZE: u32 = 10_000;
++const BATCH_SIZE: u32 = 250;
+ 
+ /// When a reorg is detected, rewind this many blocks below the reorg point
+ /// before re-scanning, to give a margin for re-crossing the actual fork height.
+diff --git a/src/main.rs b/src/main.rs
+index 8d75ad8..d965303 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -52,6 +52,9 @@ pub(crate) enum Command {
+     /// Send funds using PCZTs
+     Pczt(commands::Pczt),
+ 
++    /// AIRLOCK protected signing gate
++    AirlockGate(commands::airlock_gate::Command),
++
+     /// Migrate wallet funds between value pools (Orchard -> Ironwood)
+     Migration(commands::Migration),
+ 
+@@ -286,6 +289,7 @@ fn main() -> Result<(), anyhow::Error> {
+             },
+ 
+             Command::CreateMultisigAddress(command) => command.run(),
++            Command::AirlockGate(command) => command.run().await,
+         }
+     })
+ }
