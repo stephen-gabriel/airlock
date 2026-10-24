@@ -1,0 +1,21 @@
+<!-- Adapted from apps/web/app-live.js illustration(): original Airlock chamber geometry.
+     The former signature/check endpoint is now an evidence document and magnifying lens. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="260" viewBox="0 0 260 260" fill="none">
+  <defs><pattern id="dots" width="12" height="12" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".65" fill="#729080" opacity=".5"/></pattern></defs>
+  <rect width="260" height="260" fill="url(#dots)"/>
+  <g transform="translate(0 52)">
+    <path d="M13 72h230" stroke="#779a87" stroke-dasharray="3 5"/>
+    <path d="m75 42 45-18 45 18v62l-45 18-45-18z" fill="#244e42" stroke="#95b79a"/>
+    <path d="m120 24 45 18-45 19-45-19 45-18Z" fill="#3b6450" stroke="#95b79a"/>
+    <path d="M120 61v61" stroke="#95b79a"/>
+    <path d="M92 91V61l17 7v30M132 98V68l17-7v30" stroke="#e3edbb" stroke-width="2"/>
+    <rect x="21" y="61" width="24" height="23" rx="4" fill="#173e39" stroke="#adc6aa"/>
+    <path d="M28 68h10M28 75h7" stroke="#dce9bc"/>
+    <circle cx="212" cy="72" r="22" fill="#e3edbb"/>
+    <path d="M202 61h13l5 5v16h-18V61Zm13 0v6h5M206 71h8M206 76h5" stroke="#173e39" stroke-width="1.4"/>
+    <circle cx="220" cy="81" r="7" fill="#e3edbb" stroke="#173e39" stroke-width="1.5"/>
+    <path d="m225 86 6 6M168 72h17m-5-4 5 4-5 4M48 72h20" stroke="#c6dba9" stroke-width="1.4"/>
+    <path d="m225 86 6 6" stroke="#173e39" stroke-width="1.8"/>
+  </g>
+  <path d="M75 205h90M105 212h30" stroke="#729080" stroke-dasharray="2 4"/>
+</svg>

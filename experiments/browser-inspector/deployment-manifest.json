@@ -1,0 +1,96 @@
+{
+  "directory": "experiments/browser-inspector/dist",
+  "publicSyntheticExamples": [
+    "matching.bin",
+    "altered.bin",
+    "missing.bin",
+    "policy.json"
+  ],
+  "files": [
+    {
+      "path": "index.html",
+      "bytes": 14311,
+      "sha256": "9e4b70625a7a0301b90de6faecee23dba469f4d2788da0bcfad88cb724ee83f2"
+    },
+    {
+      "path": "style.css",
+      "bytes": 26830,
+      "sha256": "287c4d587e9f58da8d025d778113a1a8e831ac3b91fb010c043057c0c7f8f03d"
+    },
+    {
+      "path": "app.js",
+      "bytes": 10002,
+      "sha256": "c1b8265f3346665272a74ccb0eec016065f7cfdb8ac433ff6eceeeed7600b525"
+    },
+    {
+      "path": "engine.js",
+      "bytes": 5474,
+      "sha256": "01844611250759482801b2e1562d63f33308df2c074b305eff529c502289b00f"
+    },
+    {
+      "path": "form.js",
+      "bytes": 9691,
+      "sha256": "62282ff75b6aa11e68847f91f1e4a8b97dbd75f0137020f611a075497b822463"
+    },
+    {
+      "path": "view.js",
+      "bytes": 9328,
+      "sha256": "4144cffdec5aad8b3c585d41511bdbb7ad5f649ef4e61f3629f222eb6d90b4c0"
+    },
+    {
+      "path": "memo.js",
+      "bytes": 3003,
+      "sha256": "fa6157c914bd3ebb4d902a18099ed52aede7ff2cd2e84c05d9a299d5122812ec"
+    },
+    {
+      "path": "policy.js",
+      "bytes": 11499,
+      "sha256": "f7089d7bb0ee4878e8121c62bcd34cf7167b6c97018d4920a933a93467352112"
+    },
+    {
+      "path": "worker.js",
+      "bytes": 1096,
+      "sha256": "245395ff04195854c2eccb80c8df0b699a7854dda71cf9c34b29402728de2ed8"
+    },
+    {
+      "path": "inspector.wasm",
+      "bytes": 631303,
+      "sha256": "55635d3cfdacf46f1dd046b12e31483982326089ed4fb35f731ad2f922a42f1d"
+    },
+    {
+      "path": "assets/airlock-mark.svg",
+      "bytes": 311,
+      "sha256": "831fecb1a66fa0efc925c3559633c1c343047655a584af07cafdf447a89ae10d"
+    },
+    {
+      "path": "assets/inspector-boundary.svg",
+      "bytes": 1525,
+      "sha256": "bd0c18a4af37061ae62fa2c5d2ad2d0fb1d8a499b72ab855f6859eca80bff799"
+    },
+    {
+      "path": "examples/matching.bin",
+      "bytes": 2293,
+      "sha256": "d87651cbc96e76bfd5160c6a8bfe46e5cf9e5399ad0f21d64afdb1b293c19684"
+    },
+    {
+      "path": "examples/altered.bin",
+      "bytes": 2293,
+      "sha256": "0b77ca8ffefdc5b12bd21df0c16194fb15cf1fa333ec2a2007cb70d1dbb06b69"
+    },
+    {
+      "path": "examples/missing.bin",
+      "bytes": 2197,
+      "sha256": "fb0089c305fd9aa3c75090678f66e5545c59b7735b05c9bbc007fc76d532844a"
+    },
+    {
+      "path": "examples/policy.json",
+      "bytes": 1339,
+      "sha256": "7dc0b8455087f80c70be8fecc1f1d4cd2078eb09d9918f7f726845e148203dc3"
+    },
+    {
+      "path": "_headers",
+      "bytes": 469,
+      "sha256": "688e7ec1e2e4908aebde51569a883a1ddb8a6b6b839d82b2fd27619a0bd22029"
+    }
+  ]
+}

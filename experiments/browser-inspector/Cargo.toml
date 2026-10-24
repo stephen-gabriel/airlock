@@ -1,0 +1,22 @@
+[package]
+name = "airlock-browser-inspector-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pczt = { git = "https://github.com/zcash/librustzcash.git", rev = "eb38d7a373661179dbc083a2fd58b3a6c9b25818", default-features = false, features = ["orchard"] }
+orchard = { version = "=0.16.0", default-features = false }
+zcash_note_encryption = { version = "=0.5.1", default-features = false }
+serde_json = "1"
+hex = "0.4"
+zcash_protocol = { git = "https://github.com/zcash/librustzcash.git", rev = "eb38d7a373661179dbc083a2fd58b3a6c9b25818", default-features = false }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"

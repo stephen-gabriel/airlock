@@ -1,0 +1,12 @@
+{
+  "name": "airlock-inspector",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:static": "node build.mjs",
+    "test": "node --test inspector.test.mjs",
+    "test:browser": "node browser-test.mjs",
+    "preview": "node serve.mjs --dist"
+  }
+}

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173e39">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="A local lens for disclosed Zcash proposals. Compare intended output terms and inspect the evidence, without a wallet or signer.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self'; worker-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Airlock Inspector · Local proposal review</title>
+  <link rel="icon" href="./assets/airlock-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to workspace</a>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Workspace navigation">
+      <a class="brand" href="#main" aria-label="Airlock Inspector workspace">
+        <svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M9 38V10h12v28M27 38V10h12v28" stroke="#e3edbb" stroke-width="2"/><path d="M15 24h18m-5-5 5 5-5 5" stroke="#e3edbb" stroke-width="2"/></svg>
+        <span>Airlock<small>INSPECTOR</small></span>
+      </a>
+      <div class="nav-label">Your workspace</div>
+      <nav class="nav">
+        <a href="#load" aria-current="page"><span class="nav-number">01</span> Load proposal</a>
+        <a href="#intended-policy"><span class="nav-number">02</span> Set intended policy</a>
+        <a href="#results"><span class="nav-number">03</span> Inspect results</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="rail-note"><span class="eyebrow">A local lens</span><p>Understand the proposal.<br>Keep the decision yours.</p><small>No wallet. No signer.<br>No payment is made here.</small></div>
+        <div class="rail-footer"><span class="dot"></span> Browser-local checks</div>
+      </div>
+    </aside>
+    <div class="main-wrap">
+      <header class="topbar">
+        <div class="breadcrumbs">Workspace <span>/</span> <strong>Inspector</strong></div>
+        <div class="engine-status"><span class="dot"></span><span id="status" role="status">Loading checker…</span><button id="retry-wasm" class="text-btn" type="button" hidden>Retry checker</button></div>
+      </header>
+      <main id="main" class="workspace">
+        <div class="intro">
+          <div><div class="eyebrow">Clarity before a commitment</div><h1>See what’s proposed.<br>Compare what you intended.</h1><p>Inspect a disclosed proposal against your own output policy.<br class="desktop-break"> Real local checks. No signing. No transaction sent.</p></div>
+          <span class="scope-tag">NU7 · V6 · Ironwood only<small>Pre-release scope</small></span>
+        </div>
+        <div class="workspace-grid">
+          <div class="flow-column">
+            <section id="load" class="card">
+              <div class="card-header"><div><h2><span class="step-number">01</span>Load a proposal</h2><p>A local PCZT file, up to 256 KiB and 8 actions.</p></div><span class="mini-tag">STAYS IN THIS TAB</span></div>
+              <div class="card-body">
+                <label class="dropzone" id="dropzone" for="pczt">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 3h7l4 4v14H6V3h1Zm7 0v5h4M9 13h6m-6 4h4"/></svg>
+                  <span><strong>Choose a PCZT file</strong><small>or drop one here. It is read locally, never uploaded.</small></span>
+                  <span class="file-arrow" aria-hidden="true">↗</span>
+                  <input id="pczt" type="file" aria-label="Choose a local PCZT proposal">
+                </label>
+                <div id="proposal-info" class="proposal-info" role="status"><span id="filename">No proposal loaded</span><span id="file-size">256 KiB maximum</span></div>
+                <div class="section-label">Or explore a public synthetic example</div>
+                <p class="example-steps">Load an example and review its intended policy below. Then choose <strong>Inspect locally</strong> to run the actual WASM checker. Loading alone is not an inspection.</p>
+                <div class="examples" role="group" aria-label="Public synthetic proposals">
+                  <div class="example-card">
+                    <h3>Matching terms</h3>
+                    <p>Unchanged disclosures and matching intended terms. Inspect to see consistent supplied checks, not proof of transaction validity.</p>
+                    <span class="example-type">Synthetic · unsigned partial</span>
+                    <button type="button" class="scenario" data-example="matching" aria-pressed="false" aria-label="Load matching terms synthetic example">Load example <span aria-hidden="true">↗</span></button>
+                  </div>
+                  <div class="example-card">
+                    <h3>Altered amount</h3>
+                    <p>Output changed from 100,000 to 100,001 zat. Inspect to see the value difference and failed commitment checks.</p>
+                    <span class="example-type">Synthetic · unsigned partial</span>
+                    <button type="button" class="scenario" data-example="altered" aria-pressed="false" aria-label="Load altered amount synthetic example">Load example <span aria-hidden="true">↗</span></button>
+                  </div>
+                  <div class="example-card">
+                    <h3>Missing disclosure</h3>
+                    <p>Spend FVK omitted. Inspect to see matching output terms, but unavailable nullifier and randomized-key checks.</p>
+                    <span class="example-type">Synthetic · unsigned partial</span>
+                    <button type="button" class="scenario" data-example="missing" aria-pressed="false" aria-label="Load missing disclosure synthetic example">Load example <span aria-hidden="true">↗</span></button>
+                  </div>
+                </div>
+                <p id="example-note" class="helper">Examples load public synthetic unsigned partials and intended policy. No real funds or chain-valid transaction.</p>
+                <a class="example-next" href="#intended-policy">Review policy &amp; inspect locally <span aria-hidden="true">↓</span></a>
+              </div>
+            </section>
+            <section id="intended-policy" class="card">
+              <div class="card-header"><div><h2><span class="step-number">02</span>Set your intended policy</h2><p>Enter what you expect, not what the proposal tells you.</p></div></div>
+              <div class="card-body">
+                <div class="policy-topline">
+                  <label class="field" for="max-fee">Maximum conditional fee <span class="input-unit"><input id="max-fee" type="text" inputmode="numeric" value="10000" autocomplete="off"><span>zat</span></span></label>
+                  <p class="helper">An exact decimal string.<br>Balances are conditional on valid inputs.</p>
+                </div>
+                <div id="outputs" class="output-list"></div>
+                <button type="button" id="add-output" class="btn secondary small">+ Add output</button>
+                <p class="helper order-note">Include every action output in order, even zero-value or dummy outputs. Nothing is inferred to be change.</p>
+                <details class="editor-details">
+                  <summary>Metadata claims &amp; static expiry bounds <span>Not network verification</span></summary>
+                  <div class="metadata-form">
+                    <label class="field" for="coin-type">Coin-type claim<input id="coin-type" type="text" inputmode="numeric" value="1" autocomplete="off"></label>
+                    <label class="field" for="branch-id">Branch ID (8 hex digits)<input id="branch-id" class="mono" type="text" value="77190ad9" spellcheck="false" autocomplete="off"></label>
+                    <label class="field" for="min-expiry">Minimum expiry height<input id="min-expiry" type="text" inputmode="numeric" value="0" autocomplete="off"></label>
+                    <label class="field" for="max-expiry">Maximum expiry height<input id="max-expiry" type="text" inputmode="numeric" value="4600000" autocomplete="off"></label>
+                  </div>
+                  <p class="helper">Coin type is an unauthenticated claim. Branch and raw receiver do not establish a network. Expiry bounds do not establish current freshness.</p>
+                </details>
+                <details id="advanced-policy" class="editor-details">
+                  <summary>Advanced policy JSON <span>Same strict schema</span></summary>
+                  <p class="helper">Form changes update JSON. Valid JSON updates the form. Invalid JSON must be fixed before inspection. Maximum 16,384 characters.</p>
+                  <label class="sr-only" for="policy">Intended policy JSON</label>
+                  <textarea id="policy" class="mono json-editor" rows="12" maxlength="16384" spellcheck="false" autocomplete="off"></textarea>
+                </details>
+                <p id="policy-error" class="form-error" role="alert" hidden></p>
+              </div>
+              <div class="action-area">
+                <p>Compare output terms.<br><span class="muted">Inspect evidence separately, never infer approval.</span></p>
+                <div class="actions"><button id="clear" type="button" class="btn secondary">Clear</button><button id="inspect" type="button" class="btn">Inspect locally <span aria-hidden="true">→</span></button></div>
+              </div>
+            </section>
+            <section id="results" class="card results-card" tabindex="-1" aria-labelledby="results-title" data-state="empty">
+              <div class="card-header"><div><h2 id="results-title"><span class="step-number">03</span>Inspect the results</h2><p>Output terms and evidence are two different questions.</p></div><span id="result-chip" class="status-pill">Not inspected</span></div>
+              <div id="result-state" class="result-state">
+                <div class="state-icon" aria-hidden="true">≋</div>
+                <h3 id="result-summary">Your comparison starts here</h3>
+                <p id="result-description">Load a proposal, set the intended policy, then inspect. No result is assumed from a file name or example label.</p>
+              </div>
+              <div id="result-contents" hidden>
+                <div id="result-overview" class="result-overview"></div>
+                <div class="result-section"><div class="eyebrow">01 / Intended vs disclosed</div><h3>Output-policy comparison</h3><p class="helper">Matching terms refer only to this proposal and your entered policy.</p></div>
+                <div id="comparison"></div>
+                <details class="metadata-results editor-details"><summary>Metadata &amp; static bounds <span>Claims only</span></summary><div id="metadata-comparison"></div></details>
+                <div class="result-section coverage-heading"><div class="eyebrow">02 / What could actually be checked</div><h3>Disclosure-check coverage</h3><p class="helper">Supplied commitments, derived fields and missing evidence stay distinct. A disclosed FVK is not a trusted wallet identity.</p></div>
+                <div id="coverage"></div>
+                <p class="limits-note">Not checked: proofs, signatures, funding, ownership, chain membership, actual network or current expiry. This is not a transaction verifier.</p>
+              </div>
+              <details id="technical" class="technical editor-details" hidden>
+                <summary>Technical report JSON <span>Local checker output</span></summary>
+                <pre id="result"></pre>
+              </details>
+            </section>
+          </div>
+          <aside class="right-stack" aria-label="The inspection boundary">
+            <section class="boundary-card">
+              <div class="eyebrow">The Airlock principle</div>
+              <h2>Read the proposal.<br>Keep the context.</h2>
+              <p>A closer look at the evidence.<br>Not permission to move funds.</p>
+              <img class="airlock-illustration" src="./assets/inspector-boundary.svg" width="260" height="260" alt="A proposal passes through the Airlock-shaped local inspection chamber to an evidence document, not a signature.">
+              <div class="boundary-caption"><span>PROPOSAL</span><span>LOCAL CHECKS</span><span>EVIDENCE</span></div>
+            </section>
+            <section class="card rail-panel">
+              <h3>Know the boundary</h3>
+              <ul class="boundary-list">
+                <li><span aria-hidden="true">01</span><div><b>Local, not uploaded</b>Files and policy stay in this tab. Only app assets and selected public examples are fetched.</div></li>
+                <li><span aria-hidden="true">02</span><div><b>Evidence, not assumptions</b>A missing disclosure is not a match. A reconstructed field is not a supplied commitment.</div></li>
+                <li><span aria-hidden="true">03</span><div><b>No wallet authority</b>No API, wallet connection, signing, broadcast or telemetry.</div></li>
+              </ul>
+              <details class="scope-details"><summary>Scope &amp; privacy notes</summary><p>Pre-release NU7 V6 Ironwood-only PCZTs, 1–8 actions. Other pools and Unified Addresses are not supported.</p><p>PCZTs can contain private viewing data. Trust in the delivered page, WASM and browser is required. Clear removes app data, not a guarantee of memory erasure.</p></details>
+            </section>
+            <p class="receipt-hint">A matching comparison is not evidence that a payment happened, or that a transaction can be accepted by a network.</p>
+          </aside>
+        </div>
+        <footer class="footer"><span>Airlock Inspector <span class="muted">/ A local lens, not a signing gate.</span></span><span>Static by design. No account required.</span></footer>
+      </main>
+    </div>
+  </div>
+  <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
+  <noscript><p>Airlock Inspector needs JavaScript and WebAssembly for local checks. No inspection has run.</p></noscript>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

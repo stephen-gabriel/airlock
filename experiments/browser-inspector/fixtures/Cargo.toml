@@ -1,0 +1,19 @@
+[package]
+name = "inspector-synthetic-fixtures"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+airlock-browser-inspector-spike = { path = ".." }
+pczt = { git = "https://github.com/zcash/librustzcash.git", rev = "eb38d7a373661179dbc083a2fd58b3a6c9b25818", default-features = false, features = ["orchard", "zcp-builder"] }
+orchard = { version = "=0.16.0", default-features = false }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash.git", rev = "eb38d7a373661179dbc083a2fd58b3a6c9b25818", default-features = false }
+zcash_protocol = { git = "https://github.com/zcash/librustzcash.git", rev = "eb38d7a373661179dbc083a2fd58b3a6c9b25818", default-features = false }
+rand_chacha = "=0.10.0"
+rand_core = "=0.10.1"
+serde_json = "1"
+hex = "0.4"
+
+[profile.release]
+opt-level = 2
