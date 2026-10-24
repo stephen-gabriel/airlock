@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { appAssets, publicExamples } from './static-assets.mjs';
 import { parsePolicy, comparePolicy, disclosureCoverage, explainComparison, explainDisclosure } from './web/policy.js';
 import { textToMemoHex, memoHexToText, describeMemo } from './web/memo.js';
 import { createWasmLoader, createInspector, Cancelled, MAX_INPUT } from './web/engine.js';
+import { staticServer } from './serve.mjs';
 
 const manifest = JSON.parse(await readFile(new URL('./web/fixtures/manifest.json', import.meta.url)));
 const reports = Object.fromEntries(manifest.map(entry => [entry.name, entry.nativeReport]));
@@ -28,6 +30,40 @@ test('deployment contains exactly the allowlist, with recorded hashes and no tes
     assert.equal(bytes.length, file.bytes);
     assert.equal(createHash('sha256').update(bytes).digest('hex'), file.sha256);
   }
+});
+
+test('static package retains original, starter and WASM dependency license notices', async () => {
+  const [root, starter, original, thirdParty] = await Promise.all([
+    readFile(new URL('../../LICENSE', import.meta.url), 'utf8'),
+    readFile(new URL('../../apps/web/LICENSE', import.meta.url), 'utf8'),
+    readFile(new URL('./dist/LICENSE.txt', import.meta.url), 'utf8'),
+    readFile(new URL('./dist/THIRD_PARTY_LICENSES.txt', import.meta.url), 'utf8'),
+  ]);
+  assert.ok(original.includes(root.trim()));
+  assert.ok(original.includes(starter.trim()));
+  assert.match(original, /Copyright \(c\) 2026 Stephen Gabriel/);
+  for (const text of ['subtle 2.6.1', 'BSD-3-Clause', 'unicode-ident 1.0.27', 'Unicode-3.0',
+    'constant_time_eq 0.4.2', 'MIT-0', 'RUST STANDARD LIBRARY', 'The Electric Coin Company',
+    'blake2b_simd 1.0.5', '47714dc3c424e82213d7f2eb4a833e3843017be5']) {
+    assert.ok(thirdParty.includes(text), `Missing license attribution: ${text}`);
+  }
+  assert.equal(appAssets.filter(name => name.endsWith('.txt')).length, 2);
+});
+
+test('local dist preview serves both license texts without exposing repository files', async () => {
+  const preview = staticServer({ directory: fileURLToPath(new URL('./dist/', import.meta.url)), fixtures: false });
+  await new Promise(resolve => preview.listen(0, '127.0.0.1', resolve));
+  try {
+    const origin = `http://127.0.0.1:${preview.address().port}`;
+    for (const name of ['LICENSE.txt', 'THIRD_PARTY_LICENSES.txt']) {
+      const response = await fetch(`${origin}/${name}`);
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get('content-type'), /^text\/plain/);
+      assert.equal(await response.text(), await readFile(new URL(`./dist/${name}`, import.meta.url), 'utf8'));
+    }
+    assert.equal((await fetch(`${origin}/Cargo.lock`)).status, 404);
+    assert.equal((await fetch(`${origin}/fixtures/manifest.json`)).status, 404);
+  } finally { await new Promise(resolve => preview.close(resolve)); }
 });
 
 test('streamed WASM without a length header is cancelled at the byte cap, before compilation', async () => {

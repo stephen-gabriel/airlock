@@ -2,6 +2,7 @@ export const appAssets = [
   'index.html', 'style.css', 'app.js', 'engine.js', 'form.js', 'view.js',
   'memo.js', 'policy.js', 'worker.js', 'inspector.wasm',
   'assets/airlock-mark.svg', 'assets/inspector-boundary.svg',
+  'LICENSE.txt', 'THIRD_PARTY_LICENSES.txt',
 ];
 export const publicExamples = {
   'matching.bin': 'unsigned-valid-partial.bin',

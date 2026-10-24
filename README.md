@@ -1,4 +1,130 @@
-# Airlock
+# Airlock Inspector
+
+**Current hackathon submission: https://airlock-inspector.pages.dev/**
+
+A browser-local lens for disclosed Zcash proposals. Load a PCZT, enter your intended
+output policy, and run pinned upstream Rust disclosure-consistency checks in WASM.
+Output-policy comparison and disclosure coverage answer separate questions:
+do the disclosed terms agree with your intent, and what evidence could actually
+be checked?
+
+Inspector **does not sign, broadcast, connect a wallet, verify funding or validate
+complete transactions**. It has no application API or telemetry. Proposal bytes and
+entered policy stay in the browser; only static app assets and explicitly selected
+public synthetic examples are fetched. Trust in the delivered page, WASM and browser
+is still required. Use the supplied synthetic data rather than private wallet PCZTs.
+
+## Try the three examples
+
+Open the [deployed Inspector](https://airlock-inspector.pages.dev/). For each example,
+choose **Load example**, review the intended policy, then **Inspect locally**.
+Loading is not an inspection; results come from the actual WASM checker.
+
+| Example | Expected outcome |
+|---|---|
+| Matching terms | Output terms match. Implemented supplied-field checks are consistent; no transaction-validity or funding conclusion. |
+| Altered amount | Disclosed output is 100,001 zat versus intended 100,000. Policy values differ and commitment/ciphertext/balance disclosure checks fail. |
+| Missing disclosure | Output terms can match, but absent spend FVK prevents nullifier and randomized-key checks. Overall disclosure evidence is incomplete, not verified. |
+
+All three are **public synthetic unsigned partials**, not funded or chain-valid final
+transactions. Never fund their addresses. **Clear** removes the selected proposal,
+policy and results, without promising physical browser-memory erasure.
+
+**Owner-reported manual check:** the owner tested all three examples and Clear on a
+physical Android phone over mobile data. This is a manual owner report, not independent
+automation evidence. Separately, local validation recorded 25 native/WASM fixture
+comparisons and desktop/390px emulation checks in Chrome. The current 18 focused Node
+regressions also cover license packaging and notice serving. These are not physical-device
+or live-chain verification.
+
+## Supported scope and limits
+
+- Pre-release **NU7, V6/version-group V6, Ironwood-only PCZTs**, 1–8 actions, maximum
+  256 KiB. Other pools/versions and Unified Addresses are outside the implemented scope.
+- All action outputs are ordered, including dummy/zero outputs. Receivers use raw hex,
+  amounts use exact decimal zat strings, and memo equality uses all **512 original bytes**,
+  never a readable preview. No inferred change.
+- Supplied-consistent, reconstructed, unavailable and inconsistent evidence remain
+  distinct. Reconstruction/missing evidence is not verification; a disclosed FVK is
+  not a trusted wallet identity.
+- No proof/signature/authorization validation, input existence/unspentness, funding,
+  wallet ownership, real-chain membership, actual network/current expiry, settlement
+  or payment-completion claim. Coin type and expiry comparisons are metadata/static
+  bounds only. Matching implemented checks can still describe a fabricated proposal.
+- Pre-release and unaudited. Browser resource limits, short-lived isolated workers
+  and stale-result cancellation are safeguards, not a completed security/fuzz audit.
+
+Start with the [judge guide](docs/JUDGE_GUIDE.md) and the
+[Inspector technical README](experiments/browser-inspector/README.md).
+
+## Reproduce Inspector and its static package
+
+Prerequisites not provided by Git: Rust/Cargo (tested 1.99.1, edition-2024 support),
+rustup, a native C linker, Node 24, and initial network access for pinned Cargo
+dependencies. No npm install, wallet, demo inventory, proving keys or API is needed.
+Chrome/Chromium is needed only for the optional browser suite.
+
+From the repository root in Linux/WSL:
+
+```sh
+set -e
+cd experiments/browser-inspector
+rustup target add wasm32-unknown-unknown
+cargo build --locked --release --lib --target wasm32-unknown-unknown
+cargo run --locked --release --manifest-path fixtures/Cargo.toml --target-dir target/fixtures
+node build.mjs
+node --test inspector.test.mjs
+# Optional browser suite:
+# node browser-test.mjs
+# Static local preview:
+node serve.mjs --dist
+```
+
+Preview: `http://127.0.0.1:8089`. On Windows, the Cargo steps may run in WSL and
+`node .\experiments\browser-inspector\build.mjs` in repository-root PowerShell.
+`--offline` works only after dependencies are cached; `--locked` preserves both lock files.
+
+The build produces **`experiments/browser-inspector/dist/`**, now **19 allowlisted
+files**, including `LICENSE.txt` and `THIRD_PARTY_LICENSES.txt`. The prior uploaded
+package had 17 files. Dist, WASM, generated examples/fixtures, targets and test
+reports/screenshots are ignored; Git alone does not provide the deployable binaries.
+`deployment-manifest.json` records the locally prepared package's lengths and hashes.
+
+## Cloudflare Pages Direct Upload, owner action only
+
+The public URL is a **Direct Upload** deployment. **GitHub pushes do not automatically
+update the deployed site.** There is no Git-connected deployment workflow here.
+
+1. Build the package above and review its manifest. Upload only
+   `experiments/browser-inspector/dist/`, not the repository, `web/`, wallets,
+   test artifacts or the original signing-gate app.
+2. In Cloudflare **Workers & Pages**, select the existing **airlock-inspector**
+   Pages project, then **Create a new deployment** and choose **Production**.
+3. Drag/drop the dist folder (or a zip of its contents). Confirm `index.html`,
+   WASM, examples, both license/notice files and `_headers` are at the expected
+   paths, not nested under an extra `dist/` directory.
+4. Choose **Save and Deploy**. Preserve `_headers`, especially WASM MIME and worker
+   CSP. Then recheck the public URL, all three examples, Clear and the notice URLs.
+
+See Cloudflare's [Direct Upload documentation](https://developers.cloudflare.com/pages/get-started/direct-upload/)
+and [header rules](https://developers.cloudflare.com/pages/configuration/headers/).
+No redeployment was performed for this documentation/license update. **The owner must
+manually re-upload the new 19-file package to publish the required bundled notices.**
+The existing site remains the previously uploaded version until that happens.
+
+## Preserved original signing-gate prototype, historical only
+
+The repository also preserves the original API/worker/confined signing-gate prototype,
+its source and sanitized historical testnet evidence. **It is not the deployed Inspector.**
+Its signed/broadcast/confirmed testnet transactions do not prove that Inspector signs,
+broadcasts, verifies funding or validates complete transactions.
+
+The expandable historical notes below describe that earlier prototype only, including
+its private-state prerequisites and then-local-only deployment status. They are not
+instructions for the current public demo.
+
+<details>
+<summary>Original signing-gate documentation and historical evidence</summary>
 
 **Permission before signature.** Airlock is a policy gate for shielded Zcash testnet
 payments. An operator approves an exact payment intent, an application proposes a
@@ -212,10 +338,19 @@ unredacted recipient addresses.
 See [docs/LIMITATIONS.md](docs/LIMITATIONS.md) and the
 [judge guide](docs/JUDGE_GUIDE.md).
 
+</details>
+
 ## License
 
-Original Airlock code is licensed under the MIT License in [`LICENSE`](LICENSE). The
-delivered UI starter and SVG artwork retain their MIT notice at
-[`apps/web/LICENSE`](apps/web/LICENSE). Upstream Zcash components retain their own licenses;
-see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and the preserved upstream license
-texts under [`docs/upstream/zcash-devtool/`](docs/upstream/zcash-devtool/).
+Original Airlock Inspector code, documentation and original/adapted assets are
+MIT-licensed under the repository-wide [`LICENSE`](LICENSE), including
+**Copyright (c) 2026 Stephen Gabriel**. The existing Airlock-contributor and
+[UI starter/SVG MIT notice](apps/web/LICENSE) are retained, not replaced.
+
+Third-party Rust/Zcash code compiled into redistributed WASM is **not relicensed as
+our MIT work**. Its own license alternatives, required BSD/Unicode notices and
+Rust standard-library notices are preserved in the
+[bundled third-party license text](experiments/browser-inspector/web/THIRD_PARTY_LICENSES.txt).
+The static package also carries the original/starter MIT texts in `LICENSE.txt`.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the audited scope and
+preserved historical upstream notices.

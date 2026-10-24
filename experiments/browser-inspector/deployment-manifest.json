@@ -68,6 +68,16 @@
       "sha256": "bd0c18a4af37061ae62fa2c5d2ad2d0fb1d8a499b72ab855f6859eca80bff799"
     },
     {
+      "path": "LICENSE.txt",
+      "bytes": 2642,
+      "sha256": "98051593ff44ecbd31d7966a1c3822620c3e0ac44cfa82b7a7da5dadbc78f27a"
+    },
+    {
+      "path": "THIRD_PARTY_LICENSES.txt",
+      "bytes": 539225,
+      "sha256": "f1613bcaa8f60209ffcf1b22fabc1f115fb1bef0387e4a764865792d0602a3f6"
+    },
+    {
       "path": "examples/matching.bin",
       "bytes": 2293,
       "sha256": "d87651cbc96e76bfd5160c6a8bfe46e5cf9e5399ad0f21d64afdb1b293c19684"

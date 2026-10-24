@@ -1,5 +1,13 @@
 # Airlock Inspector
 
+**Current hackathon demo: https://airlock-inspector.pages.dev/**
+
+The owner-published Cloudflare Pages site uses Direct Upload. GitHub pushes do not
+update it. The previous upload had 17 files; the notice-complete package described
+below now has 19 and requires an owner re-upload. No redeployment was performed
+for the documentation/license update. See the
+[submission README and upload checklist](../../README.md).
+
 A static, browser-local disclosed-PCZT inspector and exact policy comparator.
 The polished application runs the pinned upstream Rust checker as WASM.
 There is **no API, wallet connection, signer, broadcast, telemetry, account or
@@ -146,7 +154,7 @@ Requirements: the pinned Cargo dependencies, Rust with `wasm32-unknown-unknown`,
 Node 24, and installed Chrome/Chromium for browser tests. No `npm install` is needed.
 All commands below are scoped to this experiment, not the full devtool.
 
-### Fresh checkout: create the 17-file deployment package
+### Fresh checkout: create the 19-file deployment package
 
 The repository deliberately does **not** contain `dist/`, `web/inspector.wasm`,
 `web/examples/` or `web/fixtures/`. The static host must receive the output of the
@@ -165,7 +173,7 @@ cargo run --locked --release --manifest-path fixtures/Cargo.toml --target-dir ta
 node build.mjs
 ```
 
-Output: **`experiments/browser-inspector/dist/`**, exactly 17 allowlisted files.
+Output: **`experiments/browser-inspector/dist/`**, exactly 19 allowlisted files.
 `node build.mjs` alone is the packaging step, but fails on a fresh checkout until
 the preceding Rust build and fixture generation have produced its inputs.
 
@@ -228,7 +236,7 @@ above. Browser tests use their own temporary profile, start/stop loopback static
 servers, write `evidence.json` and screenshots, then close their browser/server.
 Set `CHROME_PATH` for another Chrome/Chromium executable.
 
-## Exact deployment output, prepared but not deployed
+## Exact deployment output, notice update awaiting owner upload
 
 ```text
 experiments/browser-inspector/dist/
@@ -236,9 +244,10 @@ experiments/browser-inspector/dist/
 
 Repository-relative: **`experiments/browser-inspector/dist/`**.
 
-Exactly **17 allowlisted files**:
+Exactly **19 allowlisted files**:
 
-- Twelve app assets: HTML/CSS, seven JS modules, WASM and two local SVGs.
+- Fourteen app assets: HTML/CSS, seven JS modules, WASM, two local SVGs and
+  `LICENSE.txt` / `THIRD_PARTY_LICENSES.txt`.
 - `examples/matching.bin`, `examples/altered.bin`, `examples/missing.bin`,
   `examples/policy.json`: explicitly public disposable synthetic data only.
 - `_headers`: application/worker CSP, WASM MIME and privacy headers.
@@ -272,7 +281,7 @@ browser-generated `evidence.json` remain ignored and are not part of the commit.
 Documentation records the prior test outcomes; rerunning the browser suite creates
 the local report/screenshots. Do not force-add these ignored outputs.
 
-Before the source commit, the existing package's 17 entries, lengths and SHA-256
+Before the prior source commit, the then-existing package's 17 entries, lengths and SHA-256
 hashes were checked without rebuilding or rerunning the full already-passing suite:
 
 ```powershell
@@ -288,11 +297,12 @@ machine/network reconstruction was not repeated during source publication.
 - **25 native/WASM synthetic cases:** the original 23 plus missing/inconsistent
   cross-address evidence. Independent expected-status assertions as well as native
   report parity. Altered, redacted, reconstructed, malformed and unsupported inputs.
-- **16 focused Node regressions:** exact evidence semantics/memo bytes/schema;
+- **18 focused Node regressions:** exact evidence semantics/memo bytes/schema;
   fetch+compile timeout, streamed size cap, retry and late completion; cancelled/
   superseded workers, postMessage failure, worker termination; exact deployment
   inventory/hashes; byte-preserving result previews, invisible-byte accounting,
-  policy-versus-cryptographic explanations and specific blocked-check reasons.
+  policy-versus-cryptographic explanations and specific blocked-check reasons;
+  complete original/starter license retention and plain-text notice serving.
 - **Prior unchanged Rust validation:** 2 tests, strict WASM-target Clippy with zero
   warnings, and both-crate formatting checks. Not rerun for this UI-only refinement;
   Rust, the fixture generator, dependency pins, WASM and worker code were unchanged.
@@ -322,7 +332,10 @@ preview serves uncompressed assets. A harness expression syntax error on the
 first extended browser attempt was corrected; subsequent full runs passed.
 The first usability run also corrected an overly broad test selector that
 mistook the valid disclosed-memo preview for an invalid expected-memo preview.
-The final full browser runs and all 16 focused tests pass.
+The prior full browser runs passed. All 18 current focused tests pass, including
+the notice package update. Rust/full browser suites were not repeated for this
+documentation/license-only update; the 17 original application/package entries
+retain their prior hashes.
 
 Screenshots (ignored, not deployed):
 
@@ -436,6 +449,40 @@ All changes are under this experiment:
 - `package.json`, `.gitignore`, `README.md`: dependency-free commands, output
   isolation and documentation. Existing Cargo pins preserved.
 
-Upstream dependencies retain their licenses, including MIT/Apache-2.0 Zcash
-crates. Production distribution still needs the normal bundled dependency
-license/notice process. Root third-party notices were left unchanged.
+## License review and redistribution
+
+The repository-wide [MIT license](../../LICENSE) applies to original Inspector
+code, documentation and original/adapted assets, including
+Copyright (c) 2026 Stephen Gabriel. The pre-existing contributor and
+[starter/SVG MIT notice](../../apps/web/LICENSE) are retained in `web/LICENSE.txt`.
+Third-party compiled code is not relicensed as our original MIT work.
+
+`web/THIRD_PARTY_LICENSES.txt` includes per-version license expressions and actual
+upstream notice texts, plus Rust 1.99.1's library copyright inventory. BSD-3-Clause
+and Unicode terms remain additional requirements where applicable. Both files
+are explicitly allowlisted, served as plain text, copied into dist and included
+in the deployment hashes. No license text is fetched at runtime.
+
+The review used this cached metadata command from the experiment:
+
+```sh
+cargo metadata --offline --locked --filter-platform wasm32-unknown-unknown --format-version 1
+```
+
+Walk `resolve.root`/`resolve.nodes` and inspect the reachable packages' declared
+licenses and their actual `LICENSE*`, `COPYING*`, `NOTICE*` and copyright files.
+The 107-package graph conservatively includes optional/host build/proc-macro
+dependencies, not just code linked into the browser binary. For the four packaged
+crates without license texts, the exact upstream revision in `.cargo_vcs_info.json`
+was used; source URLs are recorded in the bundled text. Workspace-root Zcash
+licenses and the installed Rust `share/doc/rust/COPYRIGHT-library.html` were
+also retained. Identical texts are consolidated with attribution mappings.
+
+This review does not add or upgrade dependencies. Changes to Cargo pins/features
+or Rust toolchain require a fresh license review and updated notices; the packager
+copies committed notice text rather than auditing dependencies itself.
+See [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md) for license choices and
+preserved historical upstream notices.
+
+**Owner-reported manual test:** all three examples and Clear worked on a physical
+Android phone over mobile data. This is not independent automation evidence.

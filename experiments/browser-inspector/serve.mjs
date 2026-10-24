@@ -16,7 +16,7 @@ export function staticServer({ directory = web, fixtures = directory === web } =
     if (request.method !== 'GET' || !allowed || url.search) {
       response.writeHead(404); response.end(); return;
     }
-    const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.json': 'application/json', '.bin': 'application/octet-stream', '.svg': 'image/svg+xml' };
+    const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.json': 'application/json', '.bin': 'application/octet-stream', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8' };
     const csp = relative === 'worker.js'
       ? workerCsp : appCsp;
     try {
