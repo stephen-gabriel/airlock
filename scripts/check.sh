@@ -14,6 +14,7 @@ node --check "$ROOT_DIR/tests/m3-fixtures/fixtures.mjs"
 node --check "$ROOT_DIR/tests/m3-fixtures/server.mjs"
 node --check "$ROOT_DIR/tests/m3-fixtures/run.mjs"
 bash -n "$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/scripts/web/*.sh
+bash -n "$ROOT_DIR"/tests/gate/*.sh
 
 cd "$API_DIR"
 npm run typecheck

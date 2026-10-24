@@ -39,7 +39,8 @@ scripts/check.sh
 
 The checks build and typecheck the API, syntax-check the browser/fixture files, and run the
 five M2 API tests. They use a synthetic worker and consume no approval, inventory, or
-testnet funds.
+testnet funds. For a fresh Codespace, gate build prerequisites, optional gate tests, and
+live-state boundaries, see [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 Optional fixture-only UI check (needs Chrome or Chromium):
 
@@ -50,6 +51,10 @@ node tests/m3-fixtures/run.mjs
 Set `CHROME_PATH` if the browser is not standard. Output goes to the ignored
 `tests/m3-fixtures/artifacts/` directory unless `AIRLOCK_FIXTURE_OUT` is set. Every fixture
 page is marked `TEST FIXTURE - NOT LIVE`.
+
+Optional gate regression and boundary tests under `tests/gate/` need a disposable funded
+testnet wallet, identity, recipient UA, patched devtool, and namespace support. They do not
+broadcast or use demo inventory. See [`tests/gate/README.md`](tests/gate/README.md).
 
 ## What is enforced
 
@@ -154,7 +159,9 @@ deployment.
 | `scripts/web/` | Prepared local gate/worker/API lifecycle and provisioning |
 | `scripts/check.sh` | Build, typecheck, syntax, and M2 checks |
 | `scripts/build-gate.sh` | Pinned upstream clone, patch, and release build |
+| `docs/DEVELOPMENT.md` | Codespace, gate-build, and private-state setup boundaries |
 | `tests/m3-fixtures/` | Test-only UI state fixtures and Chrome runner |
+| `tests/gate/` | Optional private-state gate regression and boundary tests |
 | `docs/stage0b/` | Gate source snapshot, probes, and review notes |
 | `docs/stage0b_changes.diff` | Complete gate development-tree diff |
 | `docs/upstream/zcash-devtool/` | Pin, reproduction commands, binary hash, licenses |

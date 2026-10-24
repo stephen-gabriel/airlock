@@ -59,6 +59,11 @@ Useful review points:
 `$HOME/airlock-build/zcash-devtool`. It does not touch this repository. A rebuild may have a
 different hash if the Rust toolchain differs.
 
+Optional private-state gate regression and boundary tests are in
+[`tests/gate/`](../tests/gate/). They require a disposable funded testnet wallet, identity,
+recipient UA, and namespace support; they do not broadcast or use demo inventory. They are
+not part of the synthetic checks.
+
 ## 4. Read selected evidence
 
 [`docs/evidence/README.md`](evidence/README.md) maps the retained testnet transactions,
